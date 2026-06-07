@@ -1889,12 +1889,8 @@ async function fetchTideData(lat, lon) {
   // Deduplicate (same extreme can appear in adjacent date windows)
   const exts = rawExts.filter((e, i) => i === 0 || e.t !== rawExts[i - 1].t);
 
-  // Keep real extremes for labelling (exact BOM times, never drift)
-  const realExts = exts.slice();
-
   // Extend backward with synthetic extremes until the full 16 h lookback is covered.
-  // Each step uses the period between the first two known extremes — a reasonable
-  // approximation even when yesterday's BOM data wasn't available.
+  // Each step uses the period between the first two known extremes.
   const startMs = Date.now() - 16 * 3600 * 1000;
   if (exts.length >= 2) {
     while (exts[0].t > startMs) {
@@ -1902,6 +1898,9 @@ async function fetchTideData(lat, lon) {
       exts.unshift({ t: exts[0].t - halfPeriod, h: exts[1].h, isHW: !exts[0].isHW });
     }
   }
+
+  // All extremes in the chart window get labels (synthetics included — they're extrapolated estimates)
+  const realExts = exts.filter(e => e.t >= startMs - 3600000); // small buffer so edge extremes show
 
   // 4. Cosine-interpolate hourly heights over the 48 h window
   const endMs = startMs + 48 * 3600 * 1000;
