@@ -49,13 +49,12 @@
     z-index: 100;
   }
   .logo {
-    width: 36px; height: 36px;
-    border: 2px solid var(--accent);
+    width: 48px; height: 48px;
     border-radius: 50%;
-    display: flex; align-items: center; justify-content: center;
-    font-size: 20px;
     flex-shrink: 0;
+    overflow: hidden;
   }
+  .logo img { width: 100%; height: 100%; object-fit: cover; display: block; }
   header h1 {
     font-family: var(--sans);
     font-weight: 700;
@@ -751,14 +750,31 @@
 <body>
 
 <header>
-  <div class="logo">⚓</div>
+  <div class="logo"><img src="logo.png" alt="Phase Zero Rescue"></div>
   <div>
     <h1>Marine <span>SAR</span> Calculator</h1>
+    <div class="header-sub">powered by Phase Zero</div>
   </div>
   <div class="header-right">
     <div class="badge" id="liveDataBadge" style="display:none; border-color: var(--live); color: var(--live);">● LIVE DATA</div>
+    <button class="badge" onclick="showDisclaimer()" style="cursor:pointer;border-color:var(--accent2);color:var(--accent2);background:none;font-family:var(--mono);font-size:14px;padding:3px 8px;">⚠ DISCLAIMER</button>
   </div>
 </header>
+
+<!-- ── DISCLAIMER MODAL ── -->
+<div id="disclaimerModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.75);z-index:9999;align-items:center;justify-content:center;">
+  <div style="background:var(--panel);border:1px solid var(--accent2);border-radius:4px;max-width:560px;width:90%;padding:28px 32px;position:relative;">
+    <div style="font-family:var(--sans);font-size:22px;font-weight:700;color:var(--accent2);letter-spacing:1px;margin-bottom:16px;">⚠ DISCLAIMER</div>
+    <div style="font-family:var(--body);font-size:15px;color:var(--text);line-height:1.7;">
+      <p style="margin-bottom:12px">This tool is designed to assist trained Search and Rescue personnel in planning marine search operations. It is intended as a planning aid only and <strong>does not replace</strong> the judgement of qualified SAR coordinators, on-scene commanders, or coxswains.</p>
+      <p style="margin-bottom:12px">Calculated search areas, drift predictions, and tidal data are based on mathematical models and may differ significantly from actual conditions. Ocean current, wind, and wave data are sourced from third-party APIs and are subject to modelling error, latency, and coverage gaps — particularly in coastal and shallow-water areas.</p>
+      <p style="margin-bottom:12px">Tidal predictions are provided for general planning purposes and <strong>must not be used as the sole basis for bar crossing decisions</strong>. Mariners must consult official tide tables, local knowledge, and on-scene observations before crossing any coastal bar.</p>
+      <p style="margin-bottom:12px">This calculator does not account for meteorological surge, seiches, vessel-specific handling characteristics, or real-time hazards. All outputs should be verified against current nautical publications and operational procedures.</p>
+      <p style="color:var(--muted);font-size:13px;">Phase Zero accepts no liability for decisions made on the basis of data provided by this tool. Use in accordance with your organisation's SAR procedures and standing orders.</p>
+    </div>
+    <button onclick="hideDisclaimer()" style="margin-top:20px;background:var(--accent2);color:#000;border:none;padding:8px 24px;font-family:var(--sans);font-size:16px;font-weight:700;letter-spacing:1px;cursor:pointer;border-radius:2px;">I UNDERSTAND</button>
+  </div>
+</div>
 
 <div class="app">
 
@@ -2479,6 +2495,13 @@ function resetForm() {
   document.getElementById('fetchError').classList.remove('visible');
   clearError();
   clearLiveTags();
+}
+
+function showDisclaimer() {
+  document.getElementById('disclaimerModal').style.display = 'flex';
+}
+function hideDisclaimer() {
+  document.getElementById('disclaimerModal').style.display = 'none';
 }
 </script>
 </body>
