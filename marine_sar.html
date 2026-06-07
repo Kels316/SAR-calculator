@@ -4,6 +4,8 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Marine SAR Calculator</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <style>
   @import url('https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Barlow+Condensed:wght@300;400;600;700&family=Barlow:wght@300;400;500&display=swap');
 
@@ -557,6 +559,61 @@
   ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
   ::-webkit-scrollbar-thumb:hover { background: var(--muted); }
 
+  /* ── MAP INSET ── */
+  .map-inset {
+    position: sticky;
+    top: 0;
+    float: right;
+    width: 28%;
+    min-width: 200px;
+    max-width: 320px;
+    height: 220px;
+    margin: 0 0 16px 16px;
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    overflow: hidden;
+    z-index: 10;
+    background: #1a2535;
+  }
+  .map-hint {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-family: var(--mono);
+    font-size: 10px;
+    color: var(--muted);
+    letter-spacing: 1px;
+    text-align: center;
+    padding: 20px;
+    pointer-events: none;
+    z-index: 1;
+  }
+  /* Leaflet dark-theme overrides */
+  .leaflet-container { background: #1a2535; }
+  .leaflet-tooltip {
+    background: var(--panel) !important;
+    border-color: var(--border) !important;
+    color: var(--accent) !important;
+    font-family: var(--mono) !important;
+    font-size: 10px !important;
+    box-shadow: none !important;
+    padding: 2px 6px !important;
+  }
+  .leaflet-tooltip-top::before { border-top-color: var(--border) !important; }
+  .leaflet-control-zoom a {
+    background: var(--panel) !important;
+    color: var(--text) !important;
+    border-color: var(--border) !important;
+  }
+  .leaflet-control-attribution {
+    background: rgba(10,14,20,0.7) !important;
+    color: var(--muted) !important;
+    font-size: 8px !important;
+  }
+  .leaflet-control-attribution a { color: var(--muted) !important; }
+
   /* ── PRINT ── */
   @media print {
     header, .inputs-panel { display: none; }
@@ -593,12 +650,12 @@
       <div class="step-body">
         <div class="field">
           <label>Latitude <span class="unit">DD MM.mmm S / decimal</span></label>
-          <input type="text" id="lkp_lat" placeholder="e.g.  27 28.188 S  or  -27.4698" value="">
+          <input type="text" id="lkp_lat" placeholder="e.g.  27 28.188 S  or  -27.4698" value="" oninput="onLKPInput()">
           <div class="field-hint">Formats: -27.4698 · 27 28.188 S · 27 28 11 S</div>
         </div>
         <div class="field">
           <label>Longitude <span class="unit">DD MM.mmm E / decimal</span></label>
-          <input type="text" id="lkp_lon" placeholder="e.g.  153 01.455 E  or  153.0243" value="">
+          <input type="text" id="lkp_lon" placeholder="e.g.  153 01.455 E  or  153.0243" value="" oninput="onLKPInput()">
         </div>
         <div class="field">
           <label>Elapsed time since LKP <span class="unit">hours</span></label>
@@ -818,6 +875,12 @@
 
   <!-- ══════════════ RIGHT: RESULTS ══════════════ -->
   <div class="results-panel" id="resultsPanel">
+
+    <!-- MAP INSET -->
+    <div class="map-inset" id="mapInset">
+      <div id="sarMap" style="width:100%;height:100%"></div>
+      <div class="map-hint" id="mapHint">Enter LKP coordinates<br>to preview location</div>
+    </div>
 
     <div class="placeholder" id="placeholder">
       <div class="placeholder-icon">🧭</div>
@@ -1481,6 +1544,8 @@ function calculate() {
 
   lastCalc = { lkpLat, lkpLon, datum, r, patNames, patType, pat };
 
+  updateMapPattern(lkpLat, lkpLon, datum, r, pat);
+
   document.getElementById('resultsPanel').scrollTop = 0;
 }
 
@@ -1538,6 +1603,87 @@ function copySummary() {
     setTimeout(() => btn.textContent = '⧉ Copy Summary', 2000);
   });
 }
+
+// ═══════════════════════════════════════════════════════════
+// MAP  —  Leaflet
+// ═══════════════════════════════════════════════════════════
+let _map, _lkpMarker, _datumMarker, _searchCircle, _patternLayers = [];
+let _lkpDebounce = null;
+
+function initMap() {
+  _map = L.map('sarMap', { zoomControl: true, attributionControl: true });
+
+  // ESRI Ocean base — appropriate for marine SAR
+  L.tileLayer(
+    'https://server.arcgisonline.com/ArcGIS/rest/services/Ocean/World_Ocean_Base/MapServer/tile/{z}/{y}/{x}',
+    { attribution: '&copy; Esri, GEBCO, NOAA', maxZoom: 13 }
+  ).addTo(_map);
+
+  _map.setView([0, 140], 3); // Default: Pacific Ocean
+}
+
+function onLKPInput() {
+  clearTimeout(_lkpDebounce);
+  _lkpDebounce = setTimeout(updateMapLKP, 450);
+}
+
+function updateMapLKP() {
+  try {
+    const lat = parseLatLon(document.getElementById('lkp_lat').value);
+    const lon = parseLatLon(document.getElementById('lkp_lon').value);
+    if (isNaN(lat) || isNaN(lon) || !isFinite(lat) || !isFinite(lon)) return;
+    if (lat < -90 || lat > 90 || lon < -180 || lon > 180) return;
+
+    if (_lkpMarker) _map.removeLayer(_lkpMarker);
+    _lkpMarker = L.circleMarker([lat, lon], {
+      color: '#fff', fillColor: '#e63946', fillOpacity: 1,
+      radius: 7, weight: 2
+    }).addTo(_map).bindTooltip('LKP', { permanent: false, direction: 'top' });
+
+    document.getElementById('mapHint').style.display = 'none';
+    if (_map.getZoom() < 6) _map.setView([lat, lon], 8);
+    else _map.panTo([lat, lon]);
+  } catch(e) { /* incomplete input */ }
+}
+
+function updateMapPattern(lkpLat, lkpLon, datum, r, pat) {
+  if (!_map) return;
+
+  // Clear old calculation layers
+  _patternLayers.forEach(l => _map.removeLayer(l));
+  _patternLayers = [];
+  if (_datumMarker) { _map.removeLayer(_datumMarker); _datumMarker = null; }
+  if (_searchCircle) { _map.removeLayer(_searchCircle); _searchCircle = null; }
+
+  // Search area circle (r nm → metres)
+  _searchCircle = L.circle([datum.lat, datum.lon], {
+    radius: r * 1852,
+    color: '#f77f00', weight: 1.5,
+    fillColor: '#f77f00', fillOpacity: 0.08
+  }).addTo(_map);
+  _patternLayers.push(_searchCircle);
+
+  // Pattern route
+  const coords = pat.waypoints.map(wp => [wp.lat, wp.lon]);
+  const route = L.polyline(coords, { color: '#2ec4b6', weight: 2, opacity: 0.9 }).addTo(_map);
+  _patternLayers.push(route);
+
+  // Datum marker (on top)
+  _datumMarker = L.circleMarker([datum.lat, datum.lon], {
+    color: '#fff', fillColor: '#00b4d8', fillOpacity: 1,
+    radius: 9, weight: 2
+  }).addTo(_map).bindTooltip('DATUM', { permanent: true, direction: 'top' });
+
+  // Fit to all relevant points
+  const bounds = L.latLngBounds([
+    [lkpLat, lkpLon],
+    [datum.lat, datum.lon],
+    ...coords
+  ]);
+  _map.fitBounds(bounds, { padding: [20, 20] });
+}
+
+document.addEventListener('DOMContentLoaded', initMap);
 
 // ═══════════════════════════════════════════════════════════
 // EXPORT — GPX & KML
