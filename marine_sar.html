@@ -679,6 +679,20 @@
     top: 0; left: 0;
     width: 100%; height: 100%;
   }
+  .tide-location-label {
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    text-align: center;
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--accent);
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    padding: 5px 8px 10px;
+    z-index: 2;
+    pointer-events: none;
+    background: linear-gradient(to bottom, rgba(10,14,20,0.85) 55%, transparent);
+  }
   .map-hint {
     position: absolute;
     inset: 0;
@@ -998,6 +1012,7 @@
           <div class="wx-metrics" id="wxMetrics"></div>
           <div class="wx-condition" id="wxCondition"></div>
           <div class="tide-chart-wrap">
+            <div class="tide-location-label" id="tideLocationLabel" style="display:none"></div>
             <canvas id="tideChart"></canvas>
           </div>
         </div>
@@ -1275,12 +1290,14 @@ async function fetchLiveData() {
   document.getElementById('fetchError').classList.remove('visible');
 
   try {
-    // Parallel fetch: marine API (current, waves, SST, sea level) + forecast API (wind)
+    // Find nearest coastal bar for tide chart
+    const nearestBar = findNearestBar(lat, lon);
+
+    // Parallel fetch: marine API (current, waves, SST, sea level) + forecast API (wind) + bar tides
     const marineUrl = `https://marine-api.open-meteo.com/v1/marine?latitude=${lat}&longitude=${lon}` +
       `&current=ocean_current_velocity,ocean_current_direction,wave_height,wave_direction,` +
       `wave_period,swell_wave_height,swell_wave_direction,swell_wave_period,` +
       `sea_surface_temperature,sea_level_height_msl` +
-      `&hourly=sea_level_height_msl&forecast_days=3` +
       `&velocity_unit=knots&cell_selection=sea`;
 
     const windUrl = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}` +
@@ -1289,19 +1306,28 @@ async function fetchLiveData() {
       `cloud_cover,visibility,weather_code` +
       `&wind_speed_unit=kn`;
 
-    const [marineResp, windResp] = await Promise.all([
+    // Tide data fetched at nearest coastal bar (not LKP) — rescue teams deploy over the bar
+    const barTideUrl = `https://marine-api.open-meteo.com/v1/marine` +
+      `?latitude=${nearestBar.lat}&longitude=${nearestBar.lon}` +
+      `&hourly=sea_level_height_msl&forecast_days=3&cell_selection=nearest`;
+
+    const [marineResp, windResp, barTideResp] = await Promise.all([
       fetch(marineUrl),
-      fetch(windUrl)
+      fetch(windUrl),
+      fetch(barTideUrl)
     ]);
 
-    if (!marineResp.ok) throw new Error(`Marine API: ${marineResp.status} ${marineResp.statusText}`);
-    if (!windResp.ok)   throw new Error(`Forecast API: ${windResp.status} ${windResp.statusText}`);
+    if (!marineResp.ok)  throw new Error(`Marine API: ${marineResp.status} ${marineResp.statusText}`);
+    if (!windResp.ok)    throw new Error(`Forecast API: ${windResp.status} ${windResp.statusText}`);
+    if (!barTideResp.ok) throw new Error(`Bar Tide API: ${barTideResp.status} ${barTideResp.statusText}`);
 
-    const marine = await marineResp.json();
-    const wind   = await windResp.json();
+    const marine  = await marineResp.json();
+    const wind    = await windResp.json();
+    const barTide = await barTideResp.json();
 
-    if (marine.error) throw new Error(`Marine API: ${marine.reason}`);
-    if (wind.error)   throw new Error(`Forecast API: ${wind.reason}`);
+    if (marine.error)  throw new Error(`Marine API: ${marine.reason}`);
+    if (wind.error)    throw new Error(`Forecast API: ${wind.reason}`);
+    if (barTide.error) throw new Error(`Bar Tide API: ${barTide.reason}`);
 
     const mc = marine.current;
     const wc = wind.current;
@@ -1330,9 +1356,9 @@ async function fetchLiveData() {
     const visibM     = wc.visibility;                // metres
     const wxCode     = wc.weather_code;              // WMO
 
-    // Hourly tide heights (for tide chart)
-    const tideTimes   = marine.hourly?.time                  ?? [];
-    const tideHeights = marine.hourly?.sea_level_height_msl  ?? [];
+    // Hourly tide heights from nearest coastal bar
+    const barTideTimes   = barTide.hourly?.time                 ?? [];
+    const barTideHeights = barTide.hourly?.sea_level_height_msl ?? [];
 
     // Auto-populate Step 2: Current
     setLiveField('current_speed', 'tag_current_speed', currentSpd, 2);
@@ -1396,7 +1422,8 @@ async function fetchLiveData() {
       waveH, waveDir, wavePeriod,
       swellH, swellDir, swellPeriod,
       airTemp, feelsLike, pressure, humidity, cloudCov, visibM, wxCode,
-      tideTimes, tideHeights, fetchedAt
+      barTideTimes, barTideHeights, nearestBar.name, nearestBar.distNm,
+      fetchedAt
     );
 
     document.getElementById('livePanel').classList.add('visible');
@@ -1757,6 +1784,75 @@ function copySummary() {
 }
 
 // ═══════════════════════════════════════════════════════════
+// COASTAL BAR DATABASE — nearest bar drives the tide chart
+// ═══════════════════════════════════════════════════════════
+const COASTAL_BARS = [
+  // Queensland
+  { name: 'Noosa Bar',           lat: -26.382, lon: 153.098 },
+  { name: 'Mooloolaba Bar',      lat: -26.684, lon: 153.143 },
+  { name: 'Caloundra Bar',       lat: -26.807, lon: 153.148 },
+  { name: 'Southport Seaway',    lat: -27.952, lon: 153.430 },
+  { name: 'Jumpinpin Bar',       lat: -27.853, lon: 153.426 },
+  { name: 'Brunswick Bar',       lat: -28.541, lon: 153.551 },
+  { name: 'Ballina Bar',         lat: -28.866, lon: 153.577 },
+  { name: 'Evans Head Bar',      lat: -29.119, lon: 153.438 },
+  { name: 'Yamba Bar',           lat: -29.433, lon: 153.362 },
+  { name: 'Bundaberg Bar',       lat: -24.763, lon: 152.387 },
+  { name: 'Gladstone Bar',       lat: -23.843, lon: 151.266 },
+  { name: 'Mackay Bar',          lat: -21.149, lon: 149.201 },
+  { name: 'Bowen Bar',           lat: -20.013, lon: 148.250 },
+  { name: 'Townsville Bar',      lat: -19.257, lon: 146.818 },
+  { name: 'Cairns Bar',          lat: -16.924, lon: 145.777 },
+  { name: 'Rainbow Beach Bar',   lat: -25.904, lon: 153.092 },
+  // New South Wales
+  { name: 'Coffs Harbour Bar',   lat: -30.303, lon: 153.140 },
+  { name: 'Port Macquarie Bar',  lat: -31.433, lon: 152.921 },
+  { name: 'Crowdy Head Bar',     lat: -31.834, lon: 152.741 },
+  { name: 'Forster Bar',         lat: -32.178, lon: 152.516 },
+  { name: 'Newcastle Bar',       lat: -32.925, lon: 151.798 },
+  { name: 'Swansea Bar',         lat: -33.088, lon: 151.641 },
+  { name: 'Sydney Heads',        lat: -33.835, lon: 151.281 },
+  { name: 'Port Kembla Bar',     lat: -34.474, lon: 150.901 },
+  { name: 'Ulladulla Bar',       lat: -35.354, lon: 150.472 },
+  { name: 'Batemans Bay Bar',    lat: -35.710, lon: 150.178 },
+  { name: 'Eden Bar',            lat: -37.068, lon: 149.907 },
+  // Victoria
+  { name: 'Lakes Entrance Bar',  lat: -37.879, lon: 147.980 },
+  { name: 'Port Phillip Heads',  lat: -38.308, lon: 144.617 },
+  // South Australia
+  { name: 'Port Adelaide Bar',   lat: -34.808, lon: 138.502 },
+  // Western Australia
+  { name: 'Fremantle Bar',       lat: -32.051, lon: 115.745 },
+  { name: 'Mandurah Bar',        lat: -32.530, lon: 115.727 },
+  { name: 'Bunbury Bar',         lat: -33.327, lon: 115.636 },
+  { name: 'Albany Bar',          lat: -34.953, lon: 117.895 },
+  { name: 'Geraldton Bar',       lat: -28.777, lon: 114.612 },
+  { name: 'Carnarvon Bar',       lat: -24.871, lon: 113.665 },
+  { name: 'Port Hedland Bar',    lat: -20.313, lon: 118.571 },
+  { name: 'Broome Bar',          lat: -17.954, lon: 122.236 },
+  // Northern Territory
+  { name: 'Darwin Bar',          lat: -12.455, lon: 130.844 },
+];
+
+function haversineNm(lat1, lon1, lat2, lon2) {
+  const f1 = lat1 * Math.PI / 180, f2 = lat2 * Math.PI / 180;
+  const df = (lat2 - lat1) * Math.PI / 180;
+  const dl = (lon2 - lon1) * Math.PI / 180;
+  const a  = Math.sin(df / 2) ** 2 + Math.cos(f1) * Math.cos(f2) * Math.sin(dl / 2) ** 2;
+  return 3440.065 * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
+
+function findNearestBar(lat, lon) {
+  let nearest = COASTAL_BARS[0];
+  let minDist = haversineNm(lat, lon, nearest.lat, nearest.lon);
+  for (const bar of COASTAL_BARS.slice(1)) {
+    const d = haversineNm(lat, lon, bar.lat, bar.lon);
+    if (d < minDist) { minDist = d; nearest = bar; }
+  }
+  return { ...nearest, distNm: Math.round(minDist) };
+}
+
+// ═══════════════════════════════════════════════════════════
 // WEATHER PANEL + TIDE CHART
 // ═══════════════════════════════════════════════════════════
 
@@ -1780,7 +1876,8 @@ function updateWeatherPanel(
   waveH, waveDir, wavePeriod,
   swellH, swellDir, swellPeriod,
   airTemp, feelsLike, pressure, humidity, cloudCov, visibM, wxCode,
-  tideTimes, tideHeights, fetchTime
+  tideTimes, tideHeights, barName, barDistNm,
+  fetchTime
 ) {
   const n   = (v, dec, unit) => v !== null && v !== undefined && isFinite(v) ? `${v.toFixed(dec)}${unit}` : '—';
   const deg = v => v !== null && v !== undefined && isFinite(v) ? `${Math.round(v)}°T` : '—';
@@ -1814,6 +1911,13 @@ function updateWeatherPanel(
   document.getElementById('wxTime').textContent =
     fetchTime.toLocaleTimeString([], { hour:'2-digit', minute:'2-digit' }) + ' local';
 
+  // Bar label for tide chart
+  const barLabel = document.getElementById('tideLocationLabel');
+  if (barLabel && barName) {
+    barLabel.textContent = `${barName.toUpperCase()}  ·  ${Math.round(barDistNm)} nm from LKP`;
+    barLabel.style.display = '';
+  }
+
   document.getElementById('wxPlaceholder').style.display = 'none';
   document.getElementById('wxContent').classList.add('visible');
 
@@ -1839,7 +1943,7 @@ function drawTideChart(times, heights, canvas) {
   const ctx = canvas.getContext('2d');
   ctx.scale(dpr, dpr);
 
-  const pad = { top: 18, right: 10, bottom: 26, left: 34 };
+  const pad = { top: 26, right: 10, bottom: 26, left: 34 };
   const cW = W - pad.left - pad.right;
   const cH = H - pad.top - pad.bottom;
 
