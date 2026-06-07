@@ -727,6 +727,14 @@
     padding: 2px 6px !important;
   }
   .leaflet-tooltip-top::before { border-top-color: var(--border) !important; }
+  .tide-stn-label {
+    background: rgba(10,14,20,0.85) !important;
+    border-color: #7bed9f !important;
+    color: #7bed9f !important;
+    font-size: 10px !important;
+    padding: 1px 5px !important;
+  }
+  .tide-stn-label::before { border-top-color: #7bed9f !important; }
   .leaflet-control-zoom a {
     background: var(--panel) !important;
     color: var(--text) !important;
@@ -1372,9 +1380,14 @@ async function fetchLiveData() {
     const wxCode     = wc.weather_code;              // WMO
 
     // Tide heights from TideCheck for the nearest coastal bar
-    const barTideTimes   = tideResult?.times   ?? [];
-    const barTideHeights = tideResult?.heights  ?? [];
+    const barTideTimes    = tideResult?.times       ?? [];
+    const barTideHeights  = tideResult?.heights     ?? [];
     const tideStationName = tideResult?.stationName ?? nearestBar.name;
+
+    // Place tide station on map
+    if (tideResult?.stationLat != null && tideResult?.stationLon != null) {
+      updateMapTideStation(tideResult.stationLat, tideResult.stationLon, tideResult.stationName);
+    }
     const barChartType   = 'Tide Height';
 
     // Auto-populate Step 2: Current
@@ -1820,6 +1833,8 @@ async function fetchTideCheckData(lat, lon) {
   const station = Array.isArray(nearestData) ? nearestData[0] : nearestData;
   const stationId   = station.id   ?? station.stationId;
   const stationName = station.name ?? station.stationName ?? 'Unknown';
+  const stationLat  = station.lat  ?? station.latitude;
+  const stationLon  = station.lng  ?? station.lon ?? station.longitude;
 
   // 2. Fetch extremes — 3 days to ensure we cover 48 h ahead
   const tidesResp = await fetch(
@@ -1868,7 +1883,7 @@ async function fetchTideCheckData(lat, lon) {
     }
   }
 
-  return { times, heights, stationName };
+  return { times, heights, stationName, stationLat, stationLon };
 }
 
 // COASTAL BAR DATABASE — nearest bar drives the tide chart
@@ -2151,7 +2166,7 @@ function drawTideChart(times, heights, canvas) {
 // ═══════════════════════════════════════════════════════════
 // MAP  —  Leaflet
 // ═══════════════════════════════════════════════════════════
-let _map, _lkpMarker, _datumMarker, _searchCircle, _patternLayers = [];
+let _map, _lkpMarker, _datumMarker, _searchCircle, _patternLayers = [], _tideStationMarker;
 let _lkpDebounce = null;
 
 function initMap() {
@@ -2188,6 +2203,15 @@ function updateMapLKP() {
     if (_map.getZoom() < 6) _map.setView([lat, lon], 8);
     else _map.panTo([lat, lon]);
   } catch(e) { /* incomplete input */ }
+}
+
+function updateMapTideStation(lat, lon, name) {
+  if (!_map || lat == null || lon == null) return;
+  if (_tideStationMarker) { _map.removeLayer(_tideStationMarker); _tideStationMarker = null; }
+  _tideStationMarker = L.circleMarker([lat, lon], {
+    color: '#7bed9f', fillColor: '#7bed9f', fillOpacity: 0.9,
+    radius: 5, weight: 1.5
+  }).addTo(_map).bindTooltip(name, { permanent: true, direction: 'top', className: 'tide-stn-label' });
 }
 
 function updateMapPattern(lkpLat, lkpLon, datum, r, pat) {
@@ -2465,6 +2489,7 @@ function resetForm() {
   document.getElementById('fetchError').classList.remove('visible');
   clearError();
   clearLiveTags();
+  if (_tideStationMarker) { _map.removeLayer(_tideStationMarker); _tideStationMarker = null; }
 }
 </script>
 </body>
