@@ -2503,6 +2503,7 @@ function showDisclaimer() {
 }
 function hideDisclaimer() {
   document.getElementById('disclaimerModal').style.display = 'none';
+  if (_map) _map.invalidateSize();
 }
 </script>
 </body>
