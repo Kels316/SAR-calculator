@@ -1388,8 +1388,9 @@ async function fetchLiveData() {
     const wxCode     = wc.weather_code;              // WMO
 
     // Tide heights from TideCheck for the nearest coastal bar
-    const barTideTimes   = tideResult?.times   ?? [];
-    const barTideHeights = tideResult?.heights  ?? [];
+    const barTideTimes    = tideResult?.times     ?? [];
+    const barTideHeights  = tideResult?.heights   ?? [];
+    const barTideExtremes = tideResult?.extremes  ?? null;
     const tideStationName = tideResult?.stationName ?? nearestBar.name;
     const barChartType   = 'Tide Height';
 
@@ -1453,7 +1454,7 @@ async function fetchLiveData() {
       swellH, swellDir, swellPeriod,
       airTemp, feelsLike, pressure, humidity, cloudCov, visibM, wxCode,
       barTideTimes, barTideHeights, tideStationName, nearestBar.distNm, barChartType,
-      fetchedAt
+      fetchedAt, barTideExtremes
     );
 
     document.getElementById('livePanel').classList.add('visible');
@@ -1850,15 +1851,18 @@ async function fetchTideCheckData(lat, lon) {
   }
 
   // 3. Cosine-interpolate hourly heights: 16 h back + 32 h forward (NOW at ~1/3)
-  // Sort extremes by time ascending
+  // Sort extremes by time ascending, preserving HW/LW type for labelling
   const exts = extremes
-    .map(e => ({ t: new Date(e.time).getTime(), h: e.height }))
+    .map(e => ({ t: new Date(e.time).getTime(), h: e.height, isHW: e.type === 'high' }))
     .sort((a, b) => a.t - b.t);
+
+  // Keep real extremes for chart labels (exact TideCheck times, no grid drift)
+  const realExts = exts.slice();
 
   // Extrapolate one synthetic extreme backward so cosine interpolation works before the first real extreme
   if (exts.length >= 2) {
     const halfPeriod = exts[1].t - exts[0].t;
-    exts.unshift({ t: exts[0].t - halfPeriod, h: exts[1].h });
+    exts.unshift({ t: exts[0].t - halfPeriod, h: exts[1].h, isHW: !exts[0].isHW });
   }
 
   const startMs = Date.now() - 16 * 3600 * 1000;  // 16 h ago
@@ -1890,7 +1894,7 @@ async function fetchTideCheckData(lat, lon) {
     }
   }
 
-  return { times, heights, stationName };
+  return { times, heights, stationName, extremes: realExts };
 }
 
 // COASTAL BAR DATABASE — nearest bar drives the tide chart
@@ -1986,7 +1990,7 @@ function updateWeatherPanel(
   swellH, swellDir, swellPeriod,
   airTemp, feelsLike, pressure, humidity, cloudCov, visibM, wxCode,
   tideTimes, tideHeights, barName, barDistNm, barChartType,
-  fetchTime
+  fetchTime, tideExtremes
 ) {
   const n   = (v, dec, unit) => v !== null && v !== undefined && isFinite(v) ? `${v.toFixed(dec)}${unit}` : '—';
   const deg = v => v !== null && v !== undefined && isFinite(v) ? `${Math.round(v)}°T` : '—';
@@ -2036,7 +2040,7 @@ function updateWeatherPanel(
       const canvas = document.getElementById('tideChart');
       if (!canvas) return;
       if (canvas.offsetWidth > 0 && canvas.offsetHeight > 0) {
-        drawTideChart(tideTimes, tideHeights, canvas);
+        drawTideChart(tideTimes, tideHeights, canvas, tideExtremes);
       } else if (attempt < 10) {
         setTimeout(() => tryDraw(attempt + 1), 50);
       }
@@ -2045,9 +2049,11 @@ function updateWeatherPanel(
   }
 }
 
-function drawTideChart(times, heights, canvas) {
-  // Cache data on element for resize redraws
-  canvas._tideData = { times, heights };
+function drawTideChart(times, heights, canvas, extremes) {
+  // Preserve cached extremes when called without them (e.g. on resize)
+  const prevExts = canvas._tideData?.extremes ?? null;
+  canvas._tideData = { times, heights, extremes: extremes ?? prevExts };
+  const tideExts = canvas._tideData.extremes;
   const W = canvas.offsetWidth;
   const H = canvas.offsetHeight;
   if (W < 10 || H < 10) return;
@@ -2133,26 +2139,35 @@ function drawTideChart(times, heights, canvas) {
     ctx.fillText('NOW', nowX + 2, pad.top + 9);
   }
 
-  // HW / LW markers
-  for (let i = 1; i < n - 1; i++) {
-    if (v48[i] === null || v48[i-1] === null || v48[i+1] === null) continue;
-    const isHW = v48[i] > v48[i-1] && v48[i] > v48[i+1];
-    const isLW = v48[i] < v48[i-1] && v48[i] < v48[i+1];
-    if (!isHW && !isLW) continue;
-    const x = xAt(i), y = yAt(v48[i]);
+  // HW / LW markers — use exact TideCheck extreme times to avoid hourly-grid drift
+  const drawHWLW = (extMs, extH, isHW) => {
+    const frac = (extMs - startMs) / (endMs - startMs);
+    const x = pad.left + frac * cW;
+    const y = yAt(extH);
     ctx.fillStyle = isHW ? '#2ec4b6' : '#e63946';
     ctx.beginPath(); ctx.arc(x, y, 3, 0, Math.PI * 2); ctx.fill();
-    const timeStr = new Date(t48[i]).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false });
-    const lbl1 = (isHW ? 'HW ' : 'LW ') + v48[i].toFixed(2) + 'm';
-    const lbl2 = timeStr;
+    const timeStr = new Date(extMs).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false });
+    const lbl1 = (isHW ? 'HW ' : 'LW ') + extH.toFixed(2) + 'm';
     ctx.font = '11px monospace';
     ctx.textAlign = 'center';
-    if (isHW) {
-      ctx.fillText(lbl1, x, y - 14);
-      ctx.fillText(lbl2, x, y - 4);
-    } else {
-      ctx.fillText(lbl1, x, y + 12);
-      ctx.fillText(lbl2, x, y + 22);
+    if (isHW) { ctx.fillText(lbl1, x, y - 14); ctx.fillText(timeStr, x, y - 4); }
+    else       { ctx.fillText(lbl1, x, y + 12); ctx.fillText(timeStr, x, y + 22); }
+  };
+
+  if (tideExts && tideExts.length > 0) {
+    // Exact extreme times from TideCheck — immune to grid shift between fetches
+    for (const ext of tideExts) {
+      if (ext.t < startMs || ext.t > endMs) continue;
+      drawHWLW(ext.t, ext.h, ext.isHW);
+    }
+  } else {
+    // Fallback: detect from hourly curve when no extremes available
+    for (let i = 1; i < n - 1; i++) {
+      if (v48[i] === null || v48[i-1] === null || v48[i+1] === null) continue;
+      const isHW = v48[i] > v48[i-1] && v48[i] > v48[i+1];
+      const isLW = v48[i] < v48[i-1] && v48[i] < v48[i+1];
+      if (!isHW && !isLW) continue;
+      drawHWLW(new Date(t48[i]).getTime(), v48[i], isHW);
     }
   }
 
