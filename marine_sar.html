@@ -1833,14 +1833,20 @@ async function fetchTideCheckData(lat, lon) {
     throw new Error('TideCheck: insufficient extreme data');
   }
 
-  // 3. Cosine-interpolate hourly heights for 48 h from now
+  // 3. Cosine-interpolate hourly heights: 16 h back + 32 h forward (NOW at ~1/3)
   // Sort extremes by time ascending
   const exts = extremes
     .map(e => ({ t: new Date(e.time).getTime(), h: e.height }))
     .sort((a, b) => a.t - b.t);
 
-  const startMs = Date.now();
-  const endMs   = startMs + 48 * 3600 * 1000;
+  // Extrapolate one synthetic extreme backward so cosine interpolation works before the first real extreme
+  if (exts.length >= 2) {
+    const halfPeriod = exts[1].t - exts[0].t;
+    exts.unshift({ t: exts[0].t - halfPeriod, h: exts[1].h });
+  }
+
+  const startMs = Date.now() - 16 * 3600 * 1000;  // 16 h ago
+  const endMs   = startMs + 48 * 3600 * 1000;       // 32 h from now
   const times   = [];
   const heights = [];
 
