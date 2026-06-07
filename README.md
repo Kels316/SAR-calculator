@@ -57,7 +57,7 @@ The calculator includes 39 Australian coastal bar locations across QLD, NSW, VIC
 The tide chart shows:
 - **Grey curve** — calibrated past tidal heights (Open-Meteo, height-corrected against BOM official extremes)
 - **Teal curve** — future tidal predictions from BOM official HW/LW data
-- **Labels** — 2 past and 4 future HW/LW extremes with time (browser local timezone) and height in metres
+- **Labels** — 2 past and 4 future HW/LW extremes with time (browser local timezone) and height in metres; duplicates near the past/future boundary are automatically removed
 - **Now line** — current time marker; has no effect on the curve itself
 
 ---

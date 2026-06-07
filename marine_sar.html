@@ -2394,7 +2394,15 @@ async function fetchTideData(lat, lon) {
     }
     return { t: bestT, h: Math.round(bestH * 100) / 100, isHW: ext.isHW };
   });
-  const chartExts = [...refinedPastExts, ...futureExts];
+  // Merge and deduplicate across the past/future boundary — an extreme near 'now'
+  // can appear in both the OM-derived past set and the BOM future set.
+  const allExts = [...refinedPastExts, ...futureExts];
+  allExts.sort((a, b) => a.t - b.t);
+  const chartExts = [];
+  for (const ext of allExts) {
+    const dup = chartExts.find(e => e.isHW === ext.isHW && Math.abs(e.t - ext.t) < 2 * 3600 * 1000);
+    if (!dup) chartExts.push(ext);
+  }
 
   // ── 7. Resample to 15-min steps via spline ───────────────────────────────────────
   const STEP    = 15 * 60 * 1000;
