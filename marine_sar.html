@@ -559,21 +559,119 @@
   ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
   ::-webkit-scrollbar-thumb:hover { background: var(--muted); }
 
-  /* ── MAP INSET ── */
-  .map-inset {
+  /* ── RIGHT COLUMN (map + weather, sticky float) ── */
+  .right-column {
     position: sticky;
     top: 0;
     float: right;
     width: calc(50% - 16px);
-    min-width: 260px;
-    height: calc(50vh - 35px);
-    min-height: 200px;
+    min-width: 280px;
     margin: 0 0 16px 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    max-height: calc(100vh - 70px - 48px);
+    z-index: 10;
+  }
+
+  /* ── MAP INSET ── */
+  .map-inset {
+    flex: 0 0 auto;
+    height: 36vh;
+    min-height: 180px;
     border: 1px solid var(--border);
     border-radius: 4px;
     overflow: hidden;
-    z-index: 10;
     background: #1a2535;
+  }
+
+  /* ── WEATHER PANEL ── */
+  .weather-panel {
+    flex: 1 1 0;
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    overflow: hidden;
+    background: var(--panel);
+    display: flex;
+    flex-direction: column;
+    min-height: 160px;
+  }
+  .wx-header {
+    background: rgba(0,180,216,0.07);
+    border-bottom: 1px solid var(--border);
+    padding: 6px 12px;
+    font-family: var(--mono);
+    font-size: 10px;
+    letter-spacing: 1px;
+    color: var(--accent);
+    text-transform: uppercase;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-shrink: 0;
+  }
+  .wx-placeholder {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-family: var(--mono);
+    font-size: 10px;
+    color: var(--muted);
+    letter-spacing: 0.5px;
+    text-align: center;
+    padding: 12px;
+    line-height: 1.6;
+  }
+  .wx-content {
+    display: none;
+    flex: 1;
+    flex-direction: column;
+    overflow: hidden;
+  }
+  .wx-content.visible { display: flex; }
+  .wx-metrics {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    border-bottom: 1px solid var(--border);
+    flex-shrink: 0;
+  }
+  .wx-metric {
+    padding: 6px 10px;
+    border-right: 1px solid var(--border);
+  }
+  .wx-metric:last-child { border-right: none; }
+  .wx-metric-label {
+    font-family: var(--mono);
+    font-size: 8px;
+    color: var(--muted);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    margin-bottom: 2px;
+  }
+  .wx-metric-value {
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--text);
+  }
+  .wx-condition {
+    padding: 4px 10px;
+    font-family: var(--mono);
+    font-size: 10px;
+    color: var(--label);
+    border-bottom: 1px solid var(--border);
+    flex-shrink: 0;
+  }
+  .tide-chart-wrap {
+    flex: 1;
+    position: relative;
+    overflow: hidden;
+    min-height: 80px;
+  }
+  #tideChart {
+    position: absolute;
+    top: 0; left: 0;
+    width: 100%; height: 100%;
   }
   .map-hint {
     position: absolute;
@@ -876,11 +974,30 @@
   <!-- ══════════════ RIGHT: RESULTS ══════════════ -->
   <div class="results-panel" id="resultsPanel">
 
-    <!-- MAP INSET -->
-    <div class="map-inset" id="mapInset">
-      <div id="sarMap" style="width:100%;height:100%"></div>
-      <div class="map-hint" id="mapHint">Enter LKP coordinates<br>to preview location</div>
-    </div>
+    <!-- RIGHT COLUMN: MAP + WEATHER/TIDE -->
+    <div class="right-column">
+
+      <div class="map-inset" id="mapInset">
+        <div id="sarMap" style="width:100%;height:100%"></div>
+        <div class="map-hint" id="mapHint">Enter LKP coordinates<br>to preview location</div>
+      </div>
+
+      <div class="weather-panel" id="weatherPanel">
+        <div class="wx-header">
+          <span>🌦 Live Conditions &amp; Tides</span>
+          <span id="wxTime" style="color:var(--muted);font-size:8px"></span>
+        </div>
+        <div class="wx-placeholder" id="wxPlaceholder">Click "Fetch Live Marine Data"<br>to load weather &amp; tide chart</div>
+        <div class="wx-content" id="wxContent">
+          <div class="wx-metrics" id="wxMetrics"></div>
+          <div class="wx-condition" id="wxCondition"></div>
+          <div class="tide-chart-wrap">
+            <canvas id="tideChart"></canvas>
+          </div>
+        </div>
+      </div>
+
+    </div><!-- /right-column -->
 
     <div class="placeholder" id="placeholder">
       <div class="placeholder-icon">🧭</div>
@@ -1156,10 +1273,13 @@ async function fetchLiveData() {
     const marineUrl = `https://marine-api.open-meteo.com/v1/marine?latitude=${lat}&longitude=${lon}` +
       `&current=ocean_current_velocity,ocean_current_direction,wave_height,wave_direction,` +
       `wave_period,sea_surface_temperature,sea_level_height_msl` +
+      `&hourly=sea_level_height_msl&forecast_days=3` +
       `&velocity_unit=knots&cell_selection=sea`;
 
     const windUrl = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}` +
-      `&current=wind_speed_10m,wind_direction_10m,wind_gusts_10m` +
+      `&current=wind_speed_10m,wind_direction_10m,wind_gusts_10m,` +
+      `temperature_2m,apparent_temperature,surface_pressure,relative_humidity_2m,` +
+      `cloud_cover,visibility,weather_code` +
       `&wind_speed_unit=kn`;
 
     const [marineResp, windResp] = await Promise.all([
@@ -1190,6 +1310,19 @@ async function fetchLiveData() {
     const windSpd    = wc.wind_speed_10m;            // knots
     const windFrom   = wc.wind_direction_10m;        // °T, from
     const windGust   = wc.wind_gusts_10m;            // knots
+
+    // Atmospheric weather (for weather panel)
+    const airTemp    = wc.temperature_2m;            // °C
+    const feelsLike  = wc.apparent_temperature;      // °C
+    const pressure   = wc.surface_pressure;          // hPa
+    const humidity   = wc.relative_humidity_2m;      // %
+    const cloudCov   = wc.cloud_cover;               // %
+    const visibM     = wc.visibility;                // metres
+    const wxCode     = wc.weather_code;              // WMO
+
+    // Hourly tide heights (for tide chart)
+    const tideTimes   = marine.hourly?.time                  ?? [];
+    const tideHeights = marine.hourly?.sea_level_height_msl  ?? [];
 
     // Auto-populate Step 2: Current
     setLiveField('current_speed', 'tag_current_speed', currentSpd, 2);
@@ -1246,6 +1379,9 @@ async function fetchLiveData() {
         <div class="live-kv-value muted">${seaLevelStr}</div>
       </div>
     `;
+
+    // Update weather + tide panel
+    updateWeatherPanel(airTemp, feelsLike, pressure, humidity, cloudCov, visibM, wxCode, tideTimes, tideHeights, fetchedAt);
 
     document.getElementById('livePanel').classList.add('visible');
     document.getElementById('liveDataBadge').style.display = '';
@@ -1602,6 +1738,197 @@ function copySummary() {
     btn.textContent = '✓ Copied!';
     setTimeout(() => btn.textContent = '⧉ Copy Summary', 2000);
   });
+}
+
+// ═══════════════════════════════════════════════════════════
+// WEATHER PANEL + TIDE CHART
+// ═══════════════════════════════════════════════════════════
+
+function wmoDesc(code) {
+  if (code === null || code === undefined) return '—';
+  const map = {
+    0:'Clear sky', 1:'Mainly clear', 2:'Partly cloudy', 3:'Overcast',
+    45:'Fog', 48:'Icy fog',
+    51:'Light drizzle', 53:'Drizzle', 55:'Heavy drizzle',
+    61:'Light rain', 63:'Rain', 65:'Heavy rain',
+    71:'Light snow', 73:'Snow', 75:'Heavy snow', 77:'Snow grains',
+    80:'Light showers', 81:'Showers', 82:'Heavy showers',
+    85:'Snow showers', 86:'Heavy snow showers',
+    95:'Thunderstorm', 96:'Thunderstorm w/ hail', 99:'Heavy thunderstorm w/ hail'
+  };
+  return map[code] ?? `WMO ${code}`;
+}
+
+function updateWeatherPanel(airTemp, feelsLike, pressure, humidity, cloudCov, visibM, wxCode, tideTimes, tideHeights, fetchTime) {
+  const fmt = (v, dec, unit) => v !== null && v !== undefined ? `${v.toFixed(dec)}${unit}` : '—';
+  const visKm = visibM !== null && visibM !== undefined ? (visibM / 1000).toFixed(1) + ' km' : '—';
+
+  document.getElementById('wxMetrics').innerHTML = `
+    <div class="wx-metric">
+      <div class="wx-metric-label">Air Temp</div>
+      <div class="wx-metric-value">${fmt(airTemp, 1, '°C')}</div>
+    </div>
+    <div class="wx-metric">
+      <div class="wx-metric-label">Feels Like</div>
+      <div class="wx-metric-value">${fmt(feelsLike, 1, '°C')}</div>
+    </div>
+    <div class="wx-metric">
+      <div class="wx-metric-label">Pressure</div>
+      <div class="wx-metric-value">${pressure !== null ? Math.round(pressure) + ' hPa' : '—'}</div>
+    </div>
+    <div class="wx-metric">
+      <div class="wx-metric-label">Humidity</div>
+      <div class="wx-metric-value">${humidity !== null ? Math.round(humidity) + '%' : '—'}</div>
+    </div>
+    <div class="wx-metric">
+      <div class="wx-metric-label">Cloud Cover</div>
+      <div class="wx-metric-value">${cloudCov !== null ? Math.round(cloudCov) + '%' : '—'}</div>
+    </div>
+    <div class="wx-metric">
+      <div class="wx-metric-label">Visibility</div>
+      <div class="wx-metric-value">${visKm}</div>
+    </div>
+  `;
+
+  document.getElementById('wxCondition').textContent = wmoDesc(wxCode);
+  document.getElementById('wxTime').textContent =
+    fetchTime.toLocaleTimeString([], { hour:'2-digit', minute:'2-digit' }) + ' local';
+
+  document.getElementById('wxPlaceholder').style.display = 'none';
+  document.getElementById('wxContent').classList.add('visible');
+
+  // Draw tide chart on next frame so the panel has settled its layout
+  if (tideTimes.length > 0) {
+    requestAnimationFrame(() => {
+      const canvas = document.getElementById('tideChart');
+      if (canvas && canvas.offsetWidth > 0 && canvas.offsetHeight > 0) {
+        drawTideChart(tideTimes, tideHeights, canvas);
+      }
+    });
+  }
+}
+
+function drawTideChart(times, heights, canvas) {
+  const W = canvas.offsetWidth;
+  const H = canvas.offsetHeight;
+  if (W < 10 || H < 10) return;
+
+  const dpr = window.devicePixelRatio || 1;
+  canvas.width  = Math.round(W * dpr);
+  canvas.height = Math.round(H * dpr);
+  const ctx = canvas.getContext('2d');
+  ctx.scale(dpr, dpr);
+
+  const pad = { top: 18, right: 10, bottom: 26, left: 34 };
+  const cW = W - pad.left - pad.right;
+  const cH = H - pad.top - pad.bottom;
+
+  // First 48 hours
+  const n    = Math.min(48, times.length);
+  const t48  = times.slice(0, n);
+  const v48  = heights.slice(0, n);
+  const valid = v48.filter(v => v !== null && isFinite(v));
+  if (!valid.length) return;
+
+  const minH = Math.min(...valid);
+  const maxH = Math.max(...valid);
+  const rng  = maxH - minH || 0.5;
+  const vMin = minH - rng * 0.1;
+  const vMax = maxH + rng * 0.1;
+  const vRng = vMax - vMin;
+
+  const xAt = i => pad.left + (i / (n - 1)) * cW;
+  const yAt = v => pad.top  + (1 - (v - vMin) / vRng) * cH;
+
+  // Background
+  ctx.fillStyle = '#0a0e14';
+  ctx.fillRect(0, 0, W, H);
+
+  // Vertical grid lines every 6 h
+  ctx.strokeStyle = '#1e2d42';
+  ctx.lineWidth = 1;
+  for (let i = 0; i < n; i += 6) {
+    ctx.beginPath(); ctx.moveTo(xAt(i), pad.top); ctx.lineTo(xAt(i), pad.top + cH); ctx.stroke();
+  }
+
+  // Tide area fill
+  ctx.beginPath();
+  ctx.moveTo(xAt(0), yAt(v48[0] ?? minH));
+  for (let i = 1; i < n; i++) {
+    if (v48[i] !== null) ctx.lineTo(xAt(i), yAt(v48[i]));
+  }
+  ctx.lineTo(xAt(n - 1), pad.top + cH);
+  ctx.lineTo(xAt(0),     pad.top + cH);
+  ctx.closePath();
+  ctx.fillStyle = 'rgba(0,180,216,0.13)';
+  ctx.fill();
+
+  // Tide curve
+  ctx.beginPath();
+  let started = false;
+  for (let i = 0; i < n; i++) {
+    if (v48[i] === null) { started = false; continue; }
+    if (!started) { ctx.moveTo(xAt(i), yAt(v48[i])); started = true; }
+    else ctx.lineTo(xAt(i), yAt(v48[i]));
+  }
+  ctx.strokeStyle = '#00b4d8';
+  ctx.lineWidth = 1.5;
+  ctx.setLineDash([]);
+  ctx.stroke();
+
+  // "NOW" marker
+  const nowMs   = Date.now();
+  const startMs = new Date(t48[0]).getTime();
+  const endMs   = new Date(t48[n - 1]).getTime();
+  const nowFrac = (nowMs - startMs) / (endMs - startMs);
+  if (nowFrac >= 0 && nowFrac <= 1) {
+    const nowX = pad.left + nowFrac * cW;
+    ctx.strokeStyle = '#f77f00';
+    ctx.lineWidth = 1.2;
+    ctx.setLineDash([3, 3]);
+    ctx.beginPath(); ctx.moveTo(nowX, pad.top); ctx.lineTo(nowX, pad.top + cH); ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.fillStyle = '#f77f00';
+    ctx.font = '8px monospace';
+    ctx.textAlign = 'left';
+    ctx.fillText('NOW', nowX + 2, pad.top + 9);
+  }
+
+  // HW / LW markers
+  for (let i = 1; i < n - 1; i++) {
+    if (v48[i] === null || v48[i-1] === null || v48[i+1] === null) continue;
+    const isHW = v48[i] > v48[i-1] && v48[i] > v48[i+1];
+    const isLW = v48[i] < v48[i-1] && v48[i] < v48[i+1];
+    if (!isHW && !isLW) continue;
+    const x = xAt(i), y = yAt(v48[i]);
+    ctx.fillStyle = isHW ? '#2ec4b6' : '#e63946';
+    ctx.beginPath(); ctx.arc(x, y, 3, 0, Math.PI * 2); ctx.fill();
+    const lbl = (isHW ? 'HW ' : 'LW ') + v48[i].toFixed(2) + 'm';
+    ctx.font = '8px monospace';
+    ctx.textAlign = 'center';
+    ctx.fillText(lbl, x, isHW ? y - 6 : y + 12);
+  }
+
+  // Time labels every 12 h
+  ctx.fillStyle = '#5a7080';
+  ctx.font = '8px monospace';
+  ctx.textAlign = 'center';
+  for (let i = 0; i < n; i += 12) {
+    const d = new Date(t48[i]);
+    ctx.fillText(d.toLocaleTimeString([], { hour:'2-digit', hour12:false }),
+                 xAt(i), pad.top + cH + 10);
+    ctx.fillText(d.toLocaleDateString([], { day:'2-digit', month:'short' }),
+                 xAt(i), pad.top + cH + 20);
+  }
+
+  // Y axis labels
+  ctx.textAlign = 'right';
+  ctx.fillStyle = '#5a7080';
+  ctx.font = '8px monospace';
+  for (let i = 0; i <= 3; i++) {
+    const v = vMin + (vRng / 3) * i;
+    ctx.fillText(v.toFixed(1), pad.left - 4, yAt(v) + 3);
+  }
 }
 
 // ═══════════════════════════════════════════════════════════
