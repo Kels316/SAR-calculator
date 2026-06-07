@@ -1347,9 +1347,9 @@ async function fetchLiveData() {
     const [marineResp, windResp, tideResult] = await Promise.all([
       fetch(marineUrl),
       fetch(windUrl),
-      fetchTideCheckData(nearestBar.lat, nearestBar.lon).catch(e => {
-        console.warn('TideCheck fetch failed:', e.message);
-        return null;
+      fetchTideData(nearestBar.lat, nearestBar.lon).catch(e => {
+        console.warn('austides fetch failed:', e.message);
+        return { error: e.message };
       })
     ]);
 
@@ -1389,11 +1389,13 @@ async function fetchLiveData() {
     const wxCode     = wc.weather_code;              // WMO
 
     // Tide heights from TideCheck for the nearest coastal bar
-    const barTideTimes    = tideResult?.times     ?? [];
-    const barTideHeights  = tideResult?.heights   ?? [];
-    const barTideExtremes = tideResult?.extremes  ?? null;
-    const tideStationName = tideResult?.stationName ?? nearestBar.name;
-    const barChartType   = 'Tide Height';
+    const tideOk          = tideResult && !tideResult.error && tideResult.times;
+    const tideErrMsg      = tideResult?.error ?? null;
+    const barTideTimes    = tideOk ? tideResult.times    : [];
+    const barTideHeights  = tideOk ? tideResult.heights  : [];
+    const barTideExtremes = tideOk ? tideResult.extremes : null;
+    const tideStationName = tideOk ? tideResult.stationName : nearestBar.name;
+    const barChartType    = tideOk ? 'Tide Height' : (tideErrMsg?.includes('429') ? 'Tide data unavailable (API limit reached)' : 'Tide data unavailable');
 
     // Auto-populate Step 2: Current
     setLiveField('current_speed', 'tag_current_speed', currentSpd, 2);
@@ -1819,86 +1821,104 @@ function copySummary() {
 }
 
 // ═══════════════════════════════════════════════════════════
-// ── TIDECHECK API ──────────────────────────────────────────
-const TIDECHECK_KEY = 'tc_live_3110669925c9fa4a8714d768d358ade0';
+// ── AUSTIDES API — BOM data proxy (austides.vercel.app) ────
+// No API key. No rate limit. Official Bureau of Meteorology data.
+// ═══════════════════════════════════════════════════════════
+const AUSTIDES_BASE = 'https://austides.vercel.app/v1';
+
+// Session-level cache: station list fetched once, tide data cached 4 h per location
+let   _austidesStations  = null;
+const _tideCache         = {};
+const TIDE_CACHE_TTL_MS  = 4 * 3600 * 1000;
+
+async function getAustidesStations() {
+  if (_austidesStations) return _austidesStations;
+  const r = await fetch(`${AUSTIDES_BASE}/stations`);
+  if (!r.ok) throw new Error(`austides stations: ${r.status}`);
+  const json = await r.json();
+  _austidesStations = json.data ?? json; // { object:"list", data:[...] }
+  return _austidesStations;
+}
 
 /**
- * Fetch tide extremes from TideCheck for the nearest station to (lat, lon),
- * then cosine-interpolate to an hourly series spanning 48 h from now.
- * Returns { times: ISO[], heights: number[], stationName: string }
+ * Fetch official BOM tide extremes for the nearest station to (lat, lon),
+ * then cosine-interpolate to an hourly series spanning 48 h (16 h back + 32 h forward).
+ * Returns { times: ISO[], heights: number[], stationName: string, extremes: [] }
  */
-async function fetchTideCheckData(lat, lon) {
-  const headers = { 'X-API-Key': TIDECHECK_KEY };
+async function fetchTideData(lat, lon) {
+  // Return cached result if fresh
+  const cacheKey = `${lat.toFixed(2)}_${lon.toFixed(2)}`;
+  const cached = _tideCache[cacheKey];
+  if (cached && (Date.now() - cached.fetchedAt) < TIDE_CACHE_TTL_MS) return cached.data;
 
-  // 1. Find nearest station
-  const nearestResp = await fetch(
-    `https://tidecheck.com/api/stations/nearest?lat=${lat}&lng=${lon}`,
-    { headers }
-  );
-  if (!nearestResp.ok) throw new Error(`TideCheck nearest: ${nearestResp.status}`);
-  const nearestData = await nearestResp.json();
-  // Response is an array of stations sorted by distance
-  const station = Array.isArray(nearestData) ? nearestData[0] : nearestData;
-  const stationId   = station.id   ?? station.stationId;
-  const stationName = station.name ?? station.stationName ?? 'Unknown';
-
-  // 2. Fetch extremes — 3 days to ensure we cover 48 h ahead
-  const tidesResp = await fetch(
-    `https://tidecheck.com/api/station/${stationId}/tides?days=3&datum=LAT`,
-    { headers }
-  );
-  if (!tidesResp.ok) throw new Error(`TideCheck tides: ${tidesResp.status}`);
-  const tidesData = await tidesResp.json();
-  const extremes = tidesData.extremes ?? tidesData;
-  if (!Array.isArray(extremes) || extremes.length < 2) {
-    throw new Error('TideCheck: insufficient extreme data');
+  // 1. Find nearest BOM station
+  const stations = await getAustidesStations();
+  let nearest = null, nearestDist = Infinity;
+  for (const s of stations) {
+    const dlat = s.latitude - lat, dlon = s.longitude - lon;
+    const d = Math.sqrt(dlat * dlat + dlon * dlon); // fast proxy for haversine
+    if (d < nearestDist) { nearestDist = d; nearest = s; }
   }
+  if (!nearest) throw new Error('austides: no station found');
 
-  // 3. Cosine-interpolate hourly heights: 16 h back + 32 h forward (NOW at ~1/3)
-  // Sort extremes by time ascending, preserving HW/LW type for labelling
-  const exts = extremes
-    .map(e => ({ t: new Date(e.time).getTime(), h: e.height, isHW: e.type === 'high' }))
-    .sort((a, b) => a.t - b.t);
+  // 2. Fetch today + tomorrow + day-after in AEST (UTC+10) to cover 32 h forward
+  //    BOM data: high quality harmonic predictions, heights in metres above LAT
+  const nowAEST = new Date(Date.now() + 10 * 3600 * 1000);
+  const dates = [0, 1, 2].map(d => {
+    const dd = new Date(nowAEST.getTime() + d * 86400000);
+    return dd.toISOString().slice(0, 10);
+  });
 
-  // Keep real extremes for chart labels (exact TideCheck times, no grid drift)
+  const responses = await Promise.all(dates.map(date =>
+    fetch(`${AUSTIDES_BASE}/stations/${nearest.id}/tides?date=${date}`)
+      .then(r => r.ok ? r.json() : null).catch(() => null)
+  ));
+
+  // 3. Collect and sort all extremes
+  const rawExts = [];
+  for (const resp of responses) {
+    if (!resp?.data) continue;
+    for (const e of resp.data) {
+      rawExts.push({ t: new Date(e.time).getTime(), h: e.height_m, isHW: e.type === 'high' });
+    }
+  }
+  if (rawExts.length < 2) throw new Error('austides: insufficient data');
+  rawExts.sort((a, b) => a.t - b.t);
+
+  // Deduplicate (same extreme can appear in adjacent date windows)
+  const exts = rawExts.filter((e, i) => i === 0 || e.t !== rawExts[i - 1].t);
+
+  // Keep real extremes for labelling (exact BOM times, never drift)
   const realExts = exts.slice();
 
-  // Extrapolate one synthetic extreme backward so cosine interpolation works before the first real extreme
+  // Synthetic backward extreme so cosine interpolation covers the 16 h lookback
   if (exts.length >= 2) {
     const halfPeriod = exts[1].t - exts[0].t;
     exts.unshift({ t: exts[0].t - halfPeriod, h: exts[1].h, isHW: !exts[0].isHW });
   }
 
-  const startMs = Date.now() - 16 * 3600 * 1000;  // 16 h ago
-  const endMs   = startMs + 48 * 3600 * 1000;       // 32 h from now
-  const times   = [];
-  const heights = [];
+  // 4. Cosine-interpolate hourly heights over the 48 h window
+  const startMs = Date.now() - 16 * 3600 * 1000;
+  const endMs   = startMs  + 48 * 3600 * 1000;
+  const times = [], heights = [];
 
   for (let ms = startMs; ms <= endMs; ms += 3600 * 1000) {
     times.push(new Date(ms).toISOString());
-
-    // Find the surrounding pair of extremes
     let lo = null, hi = null;
     for (let i = 0; i < exts.length - 1; i++) {
-      if (exts[i].t <= ms && ms <= exts[i + 1].t) {
-        lo = exts[i]; hi = exts[i + 1]; break;
-      }
+      if (exts[i].t <= ms && ms <= exts[i + 1].t) { lo = exts[i]; hi = exts[i + 1]; break; }
     }
-
     if (lo && hi) {
-      // Cosine interpolation: h = midpoint + amplitude * cos(π * frac)
       const frac = (ms - lo.t) / (hi.t - lo.t);
       heights.push((lo.h + hi.h) / 2 + (lo.h - hi.h) / 2 * Math.cos(Math.PI * frac));
-    } else if (ms < exts[0].t) {
-      // Before first extreme — extrapolate flat
-      heights.push(exts[0].h);
     } else {
-      // After last extreme — extrapolate flat
-      heights.push(exts[exts.length - 1].h);
+      heights.push(ms < exts[0].t ? exts[0].h : exts[exts.length - 1].h);
     }
   }
 
-  return { times, heights, stationName, extremes: realExts };
+  const result = { times, heights, stationName: nearest.name, extremes: realExts };
+  _tideCache[cacheKey] = { data: result, fetchedAt: Date.now() };
+  return result;
 }
 
 // COASTAL BAR DATABASE — nearest bar drives the tide chart
@@ -2050,6 +2070,25 @@ function updateWeatherPanel(
       }
     };
     setTimeout(() => tryDraw(0), 80);
+  } else {
+    // TideCheck unavailable — draw error message on canvas
+    setTimeout(() => {
+      const canvas = document.getElementById('tideChart');
+      if (!canvas || canvas.offsetWidth < 10) return;
+      const dpr = window.devicePixelRatio || 1;
+      canvas.width  = Math.round(canvas.offsetWidth  * dpr);
+      canvas.height = Math.round(canvas.offsetHeight * dpr);
+      const ctx = canvas.getContext('2d');
+      ctx.scale(dpr, dpr);
+      ctx.fillStyle = '#0a0e14';
+      ctx.fillRect(0, 0, canvas.offsetWidth, canvas.offsetHeight);
+      ctx.fillStyle = '#5a7080';
+      ctx.font = '13px monospace';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      const msg = '⚠ Tide data unavailable — check console for details';
+      ctx.fillText(msg, canvas.offsetWidth / 2, canvas.offsetHeight / 2);
+    }, 80);
   }
 }
 
