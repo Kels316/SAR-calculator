@@ -1,6 +1,10 @@
 # Marine SAR Calculator
 
-A browser-based Search and Rescue planning tool based on Australian National SAR Manual (AUSSAR) 2023 and IAMSAR procedures.
+A browser-based Search and Rescue planning tool based on the Australian National SAR Manual (AUSSAR) 2023 and IAMSAR procedures.
+
+**Live tool:** https://kels316.github.io/SAR-calculator/
+
+---
 
 ## Features
 
@@ -13,42 +17,66 @@ A browser-based Search and Rescue planning tool based on Australian National SAR
   - Sector Search
   - Creeping Line Ahead
   - Track Line Search
-- **Live marine data** — fetches current ocean conditions from [Open-Meteo](https://open-meteo.com) and auto-populates input fields
-- **Print / copy summary** — formatted SAR plan output for briefings
+- **Live marine data** — fetches current ocean conditions from [Open-Meteo](https://open-meteo.com) and auto-populates current, wind, and weather factor inputs
+- **Live weather panel** — displays wave height/period/direction, swell, wind, air temperature, pressure, humidity, visibility, and sea surface temperature at the LKP
+- **Tide chart** — real tidal height predictions for the nearest coastal bar to the LKP, covering 48 hours, sourced from [TideCheck](https://tidecheck.com)
+- **Interactive map** — sticky Leaflet map inset showing the LKP and calculated search pattern
+- **Waypoint export** — GPX and KML export for upload to Google Earth or GPS devices
+- **Print / copy summary** — formatted SAR plan output for operational briefings
 
-## Live Data (Open-Meteo)
+---
 
-Enter LKP coordinates and click **Fetch Live Marine Data** to pull current conditions for that location:
+## Live Data Sources
 
-| Field auto-populated | Source |
+Enter LKP coordinates and click **Fetch Live Marine Data** to pull current conditions:
+
+| Data | Source |
 |---|---|
-| Ocean current speed & direction | Open-Meteo Marine API |
-| Wind speed & direction (10 m) | Open-Meteo Forecast API |
+| Ocean current speed & direction | Open-Meteo Marine API (free, no key) |
+| Wind speed, direction & gusts | Open-Meteo Forecast API (free, no key) |
+| Wave height, period & direction | Open-Meteo Marine API |
+| Swell height, period & direction | Open-Meteo Marine API |
+| Air temperature, pressure, humidity | Open-Meteo Forecast API |
+| Sea surface temperature | Open-Meteo Marine API |
 | Weather factor (Wf) | Derived from significant wave height |
+| Tide chart (nearest coastal bar) | TideCheck API |
 
-Additional context displayed (not used in calculations): significant wave height, wave period, wave direction, sea surface temperature, sea level height above MSL.
+Fields auto-populated from live data are highlighted in green. Editing any field manually removes the green highlight.
 
-The Open-Meteo APIs are free and require no API key. Ocean currents and tides are modelled at ~8 km resolution — accuracy is limited in coastal areas and this data does not replace nautical almanac or local tide tables.
+Ocean currents are modelled at ~8 km resolution — accuracy is limited in coastal areas and this data supplements but does not replace nautical almanac data or on-scene observations.
 
-## Files
+---
 
-| File | Description |
-|---|---|
-| `marine_sar.html` | Main calculator (open this in a browser) |
-| `index.html` | Identical entry point |
+## Coastal Bar Database
+
+The calculator includes 39 Australian coastal bar locations across QLD, NSW, VIC, SA, WA, and NT. When live data is fetched, the nearest bar to the LKP is identified and its tidal predictions are displayed — relevant to rescue crews who must cross the bar to reach the search area.
+
+---
 
 ## Usage
 
 Open `marine_sar.html` in any modern browser — no server or installation required.
 
-1. Enter the **Last Known Position** (decimal degrees or DD MM.mmm format)
-2. Optionally click **Fetch Live Marine Data** to auto-populate current and wind
+1. Enter the **Last Known Position** (decimal degrees, DD MM.mmm, or DMS format)
+2. Click **Fetch Live Marine Data** to auto-populate current, wind, and weather conditions
 3. Review and adjust all inputs across the six steps
 4. Click **Calculate SAR Plan**
-5. Use **Print / Save PDF** or **Copy Summary** to export the plan
+5. Export waypoints via **GPX** or **KML**, or use **Print / Save PDF** for briefings
+
+---
+
+## Files
+
+| File | Description |
+|---|---|
+| `marine_sar.html` | Main calculator — open this in a browser |
+| `index.html` | Redirects to `marine_sar.html` |
+
+---
 
 ## References
 
 - Australian National Search and Rescue Manual (AUSSAR) 2023
 - IAMSAR Manual Vol. II — Mission Co-ordination
-- Open-Meteo Marine Weather API — [docs](https://open-meteo.com/en/docs/marine-weather-api)
+- Open-Meteo Marine & Forecast APIs — [docs](https://open-meteo.com/en/docs/marine-weather-api)
+- TideCheck Tide Prediction API — [tidecheck.com](https://tidecheck.com)
