@@ -1215,7 +1215,7 @@
     <div id="results" style="display:none">
 
       <div class="actions-row">
-        <button class="action-btn" onclick="window.print()">⎙ Print / Save PDF</button>
+        <button class="action-btn" onclick="printSummaryPDF()">⎙ Print / Save PDF</button>
         <button class="action-btn" onclick="copySummary()">⧉ Copy Summary</button>
         <button class="action-btn" onclick="exportGPX()">⬇ Export GPX</button>
         <button class="action-btn" onclick="exportKML()">⬇ Export KML</button>
@@ -1622,6 +1622,17 @@ async function fetchLiveData() {
       fetchedAt, barTideExtremes, barTideNowIdx
     );
 
+    lastLiveData = {
+      fetchedAt, timeStr,
+      currentSpd, currentDir,
+      windSpd, windFrom, windGust,
+      waveH, waveDir, wavePeriod,
+      swellH, swellDir, swellPeriod,
+      sst, airTemp, feelsLike, pressure, humidity, visibM,
+      seaState, tideStationName,
+      tideExtremes: barTideExtremes,
+    };
+
     document.getElementById('livePanel').classList.add('visible');
     document.getElementById('liveDataBadge').style.display = '';
     livePanelOpen = true;
@@ -1942,8 +1953,9 @@ function getFloat(id, fallback) {
 // MAIN CALCULATE
 // ═══════════════════════════════════════════════════════════
 
-let lastSummary = '';
-let lastCalc    = null;
+let lastSummary  = '';
+let lastCalc     = null;
+let lastLiveData = null;   // cached live conditions for summary inclusion
 
 function calculate() {
   clearError();
@@ -2084,15 +2096,36 @@ function calculate() {
 }
 
 function buildSummary(d) {
-  const liveNote = document.getElementById('livePanel').classList.contains('visible')
-    ? '\n  (Current & wind values from Open-Meteo live data)'
-    : '';
+  const ld = lastLiveData;
+  const liveBlock = ld ? [
+    '── LIVE CONDITIONS (Open-Meteo) ─────',
+    `  Fetched       : ${ld.timeStr}`,
+    `  Wind          : ${ld.windSpd !== null ? Math.round(ld.windSpd) + ' kn' : 'N/A'} from ${ld.windFrom !== null ? Math.round(ld.windFrom) + '°T' : '—'}${ld.windGust !== null ? '  (gust ' + Math.round(ld.windGust) + ' kn)' : ''}`,
+    `  Ocean current : ${ld.currentSpd !== null ? ld.currentSpd.toFixed(2) + ' kn' : 'N/A'}${ld.currentDir !== null ? ' → ' + Math.round(ld.currentDir) + '°T' : ''}`,
+    `  Wave height   : ${ld.waveH !== null ? ld.waveH.toFixed(1) + ' m' : 'N/A'}${ld.waveDir !== null ? '  from ' + Math.round(ld.waveDir) + '°T' : ''}${ld.wavePeriod !== null ? '  ' + ld.wavePeriod.toFixed(0) + ' s' : ''}`,
+    `  Swell         : ${ld.swellH !== null ? ld.swellH.toFixed(1) + ' m' : 'N/A'}${ld.swellDir !== null ? '  from ' + Math.round(ld.swellDir) + '°T' : ''}${ld.swellPeriod !== null ? '  ' + ld.swellPeriod.toFixed(0) + ' s' : ''}`,
+    `  Sea state     : ${ld.seaState.label}`,
+    `  Air temp      : ${ld.airTemp !== null ? ld.airTemp.toFixed(1) + ' °C' : 'N/A'}${ld.feelsLike !== null ? '  (feels ' + ld.feelsLike.toFixed(1) + ' °C)' : ''}`,
+    `  Pressure      : ${ld.pressure !== null ? ld.pressure.toFixed(0) + ' hPa' : 'N/A'}`,
+    `  Humidity      : ${ld.humidity !== null ? ld.humidity + '%' : 'N/A'}`,
+    `  Visibility    : ${ld.visibM !== null ? (ld.visibM / 1000).toFixed(1) + ' km' : 'N/A'}`,
+    `  SST           : ${ld.sst !== null ? ld.sst.toFixed(1) + ' °C' : 'N/A'}`,
+    `  Tide station  : ${ld.tideStationName}`,
+    ...(ld.tideExtremes ? ld.tideExtremes.map(e => {
+      const dt = new Date(e.t);
+      const timeStr = dt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) +
+                      ' ' + dt.toLocaleDateString([], { day: '2-digit', month: 'short' });
+      return `  ${e.isHW ? 'HW' : 'LW'}            : ${e.h.toFixed(2)} m  ${timeStr}`;
+    }) : []),
+    '',
+  ] : [];
+
   const lines = [
     '════════════════════════════════════════',
     '  MARINE SAR PLAN',
-    '  Australian National SAR Manual 2023',
     '════════════════════════════════════════',
-    liveNote,
+    '',
+    ...liveBlock,
     '── INCIDENT ─────────────────────────',
     `  LKP          : ${formatLatLon(d.lkpLat, d.lkpLon)}`,
     `                 ${formatLatLonDec(d.lkpLat, d.lkpLon)}`,
@@ -2127,6 +2160,35 @@ function buildSummary(d) {
   });
   lines.push('════════════════════════════════════════');
   return lines.join('\n');
+}
+
+function printSummaryPDF() {
+  if (!lastSummary) { calculate(); }
+  if (!lastSummary) return;
+  const escaped = lastSummary
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  const win = window.open('', '_blank', 'width=800,height=900');
+  win.document.write(`<!DOCTYPE html>
+<html><head>
+  <meta charset="utf-8">
+  <title>Marine SAR Plan</title>
+  <style>
+    body {
+      font-family: 'Courier New', Courier, monospace;
+      font-size: 10.5pt;
+      line-height: 1.45;
+      margin: 18mm 20mm;
+      color: #000;
+    }
+    pre { white-space: pre; margin: 0; }
+    @page { size: A4 portrait; margin: 18mm 20mm; }
+    @media print { body { margin: 0; } }
+  </style>
+</head><body>
+<pre>${escaped}</pre>
+<script>window.addEventListener('load', function() { window.print(); });<\/script>
+</body></html>`);
+  win.document.close();
 }
 
 function copySummary() {
