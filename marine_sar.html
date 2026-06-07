@@ -2806,6 +2806,30 @@ let _lkpDebounce = null;
 function initMap() {
   _map = L.map('sarMap', { zoomControl: true, attributionControl: true });
 
+  // On real touch devices, Leaflet captures all touch events and prevents
+  // page scroll — particularly problematic on tablets where the tide chart
+  // is below the map. Disable drag/zoom handlers on narrow viewports so
+  // touch scrolling passes through to the browser. Tap-to-set-LKP still works.
+  function applyMobileDrag() {
+    if (window.innerWidth <= 1024) {
+      _map.dragging.disable();
+      _map.touchZoom.disable();
+      _map.doubleClickZoom.disable();
+      _map.boxZoom.disable();
+      _map.keyboard.disable();
+      if (_map.tap) _map.tap.disable();
+    } else {
+      _map.dragging.enable();
+      _map.touchZoom.enable();
+      _map.doubleClickZoom.enable();
+      _map.boxZoom.enable();
+      _map.keyboard.enable();
+      if (_map.tap) _map.tap.enable();
+    }
+  }
+  applyMobileDrag();
+  window.addEventListener('resize', applyMobileDrag);
+
   // ESRI Ocean base — appropriate for marine SAR
   L.tileLayer(
     'https://server.arcgisonline.com/ArcGIS/rest/services/Ocean/World_Ocean_Base/MapServer/tile/{z}/{y}/{x}',
