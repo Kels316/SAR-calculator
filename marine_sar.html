@@ -762,7 +762,7 @@
 </header>
 
 <!-- ── DISCLAIMER MODAL ── -->
-<div id="disclaimerModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.75);z-index:9999;align-items:center;justify-content:center;">
+<div id="disclaimerModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.85);z-index:9999;align-items:center;justify-content:center;">
   <div style="background:var(--panel);border:1px solid var(--accent2);border-radius:4px;max-width:560px;width:90%;padding:28px 32px;position:relative;">
     <div style="font-family:var(--sans);font-size:22px;font-weight:700;color:var(--accent2);letter-spacing:1px;margin-bottom:16px;">⚠ DISCLAIMER</div>
     <div style="font-family:var(--body);font-size:15px;color:var(--text);line-height:1.7;">
@@ -2258,6 +2258,7 @@ function updateMapPattern(lkpLat, lkpLon, datum, r, pat) {
 }
 
 document.addEventListener('DOMContentLoaded', () => {
+  showDisclaimer();
   initMap();
   // Redraw tide chart if the panel is resized (e.g. window resize)
   const wrap = document.getElementById('tideChart')?.parentElement;
