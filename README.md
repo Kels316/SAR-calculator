@@ -20,7 +20,7 @@ A browser-based Search and Rescue planning tool based on the Australian National
 - **Live marine data** — fetches current ocean conditions from [Open-Meteo](https://open-meteo.com) and auto-populates current, wind, and weather factor inputs
 - **Live weather panel** — displays wave height/period/direction, swell, wind, air temperature, pressure, humidity, visibility, and sea surface temperature at the LKP
 - **Tide chart** — real tidal height predictions for the nearest coastal bar to the LKP; past tidal curve from calibrated Open-Meteo data, future from BOM official HW/LW predictions via [austides](https://austides.vercel.app), joined by a cubic spline for a smooth continuous curve
-- **Interactive map** — sticky Leaflet map inset showing the LKP and calculated search pattern
+- **Interactive map** — tap to place a draggable LKP pin, or type coordinates; map shows LKP and calculated search pattern
 - **Waypoint export** — GPX and KML export for upload to Google Earth or GPS devices
 - **Print / copy summary** — formatted SAR plan output for operational briefings
 
@@ -64,7 +64,7 @@ The tide chart shows:
 
 Open `marine_sar.html` in any modern browser — no server or installation required.
 
-1. Enter the **Last Known Position** (decimal degrees, DD MM.mmm, or DMS format)
+1. Enter the **Last Known Position** by typing coordinates (decimal, DD MM.mmm, or DMS), or tap the map to drop a pin — the pin can be dragged to refine the position
 2. Click **Fetch Live Marine Data** to auto-populate current, wind, and weather conditions
 3. Review and adjust all inputs across the six steps
 4. Click **Calculate SAR Plan**

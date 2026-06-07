@@ -1024,7 +1024,8 @@
 
       <div class="map-inset" id="mapInset">
         <div id="sarMap" style="width:100%;height:100%"></div>
-        <div class="map-hint" id="mapHint">Enter LKP coordinates<br>to preview location</div>
+        <div class="map-hint" id="mapHint">Enter LKP coordinates or tap map to set position</div>
+        <div id="mapPinHint" style="position:absolute;bottom:6px;left:50%;transform:translateX(-50%);background:rgba(0,0,0,0.55);color:#aab;font-size:11px;font-family:var(--mono);padding:3px 8px;border-radius:3px;pointer-events:none;white-space:nowrap;">Tap map to set LKP</div>
       </div>
 
       <!-- Weather metrics panel — shrinks to fit its content -->
@@ -1249,11 +1250,15 @@ function parseLatLon(raw) {
   }
   const parts = raw.split(/[\s,°'"]+/).filter(Boolean).map(Number).filter(v => !isNaN(v));
   let val;
-  if (parts.length === 1) val = parts[0];
-  else if (parts.length === 2) val = Math.abs(parts[0]) + parts[1]/60;
-  else if (parts.length >= 3) val = Math.abs(parts[0]) + parts[1]/60 + parts[2]/3600;
-  else throw new Error('Cannot parse: ' + raw);
-  if (parts[0] < 0) val = -val;
+  if (parts.length === 1) {
+    val = parts[0]; // sign already correct for plain decimal input (e.g. -27.46980)
+  } else if (parts.length === 2) {
+    val = Math.abs(parts[0]) + parts[1]/60;
+    if (parts[0] < 0) val = -val;
+  } else if (parts.length >= 3) {
+    val = Math.abs(parts[0]) + parts[1]/60 + parts[2]/3600;
+    if (parts[0] < 0) val = -val;
+  } else throw new Error('Cannot parse: ' + raw);
   if (hemi === 'S' || hemi === 'W') val = -Math.abs(val);
   if (hemi === 'N' || hemi === 'E') val =  Math.abs(val);
   return val;
@@ -2411,11 +2416,55 @@ function initMap() {
   ).addTo(_map);
 
   _map.setView([0, 140], 3); // Default: Pacific Ocean
+
+  _lkpIcon = L.divIcon({
+    className: '',
+    html: '<div style="width:16px;height:16px;border-radius:50%;background:#e63946;border:2.5px solid #fff;box-shadow:0 1px 4px rgba(0,0,0,0.5);cursor:grab;box-sizing:border-box;"></div>',
+    iconSize: [16, 16],
+    iconAnchor: [8, 8]
+  });
+
+  // Click-to-set LKP — tap anywhere on the map to place / move the pin
+  _map.on('click', function(e) {
+    const lat = e.latlng.lat, lon = e.latlng.lng;
+    document.getElementById('lkp_lat').value = lat.toFixed(5);
+    document.getElementById('lkp_lon').value = lon.toFixed(5);
+    ['lkp_lat','lkp_lon'].forEach(id => document.getElementById(id).classList.remove('live-populated'));
+    if (_lkpMarker) {
+      _lkpMarker.setLatLng(e.latlng);
+      document.getElementById('mapHint').style.display = 'none';
+    } else {
+      _lkpMarker = L.marker(e.latlng, { icon: _lkpIcon, draggable: true })
+        .addTo(_map).bindTooltip('LKP', { permanent: false, direction: 'top' });
+      _attachLKPDrag();
+      document.getElementById('mapHint').style.display = 'none';
+    }
+    onLKPInput();
+  });
 }
 
 function onLKPInput() {
   clearTimeout(_lkpDebounce);
   _lkpDebounce = setTimeout(updateMapLKP, 450);
+}
+
+let _lkpIcon = null;
+
+function _attachLKPDrag() {
+  _lkpMarker.on('drag', function() {
+    const pos = _lkpMarker.getLatLng();
+    document.getElementById('lkp_lat').value = pos.lat.toFixed(5);
+    document.getElementById('lkp_lon').value = pos.lng.toFixed(5);
+  });
+  _lkpMarker.on('dragend', function() {
+    const pos = _lkpMarker.getLatLng();
+    document.getElementById('lkp_lat').value = pos.lat.toFixed(5);
+    document.getElementById('lkp_lon').value = pos.lng.toFixed(5);
+    ['lkp_lat','lkp_lon'].forEach(id => document.getElementById(id).classList.remove('live-populated'));
+    // Trigger live data debounce without re-running updateMapLKP (marker is already in place)
+    clearTimeout(_lkpDebounce);
+    _lkpDebounce = setTimeout(() => {}, 0); // clear only; user can click Fetch manually
+  });
 }
 
 function updateMapLKP() {
@@ -2425,11 +2474,14 @@ function updateMapLKP() {
     if (isNaN(lat) || isNaN(lon) || !isFinite(lat) || !isFinite(lon)) return;
     if (lat < -90 || lat > 90 || lon < -180 || lon > 180) return;
 
-    if (_lkpMarker) _map.removeLayer(_lkpMarker);
-    _lkpMarker = L.circleMarker([lat, lon], {
-      color: '#fff', fillColor: '#e63946', fillOpacity: 1,
-      radius: 7, weight: 2
-    }).addTo(_map).bindTooltip('LKP', { permanent: false, direction: 'top' });
+    if (_lkpMarker) {
+      // Reposition existing draggable marker rather than recreating it
+      _lkpMarker.setLatLng([lat, lon]);
+    } else {
+      _lkpMarker = L.marker([lat, lon], { icon: _lkpIcon, draggable: true })
+        .addTo(_map).bindTooltip('LKP', { permanent: false, direction: 'top' });
+      _attachLKPDrag();
+    }
 
     document.getElementById('mapHint').style.display = 'none';
     if (_map.getZoom() < 6) _map.setView([lat, lon], 8);
