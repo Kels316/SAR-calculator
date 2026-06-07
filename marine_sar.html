@@ -1861,10 +1861,11 @@ async function fetchTideData(lat, lon) {
   }
   if (!nearest) throw new Error('austides: no station found');
 
-  // 2. Fetch today + tomorrow + day-after in AEST (UTC+10) to cover 32 h forward
-  //    BOM data: high quality harmonic predictions, heights in metres above LAT
+  // 2. Fetch yesterday + today + tomorrow + day-after in AEST (UTC+10)
+  //    BOM data: official harmonic predictions, heights in metres above LAT
+  //    Yesterday is attempted first for the 16h lookback; 422 is silently ignored.
   const nowAEST = new Date(Date.now() + 10 * 3600 * 1000);
-  const dates = [0, 1, 2].map(d => {
+  const dates = [-1, 0, 1, 2].map(d => {
     const dd = new Date(nowAEST.getTime() + d * 86400000);
     return dd.toISOString().slice(0, 10);
   });
@@ -1891,15 +1892,19 @@ async function fetchTideData(lat, lon) {
   // Keep real extremes for labelling (exact BOM times, never drift)
   const realExts = exts.slice();
 
-  // Synthetic backward extreme so cosine interpolation covers the 16 h lookback
+  // Extend backward with synthetic extremes until the full 16 h lookback is covered.
+  // Each step uses the period between the first two known extremes — a reasonable
+  // approximation even when yesterday's BOM data wasn't available.
+  const startMs = Date.now() - 16 * 3600 * 1000;
   if (exts.length >= 2) {
-    const halfPeriod = exts[1].t - exts[0].t;
-    exts.unshift({ t: exts[0].t - halfPeriod, h: exts[1].h, isHW: !exts[0].isHW });
+    while (exts[0].t > startMs) {
+      const halfPeriod = exts[1].t - exts[0].t;
+      exts.unshift({ t: exts[0].t - halfPeriod, h: exts[1].h, isHW: !exts[0].isHW });
+    }
   }
 
   // 4. Cosine-interpolate hourly heights over the 48 h window
-  const startMs = Date.now() - 16 * 3600 * 1000;
-  const endMs   = startMs  + 48 * 3600 * 1000;
+  const endMs = startMs + 48 * 3600 * 1000;
   const times = [], heights = [];
 
   for (let ms = startMs; ms <= endMs; ms += 3600 * 1000) {
