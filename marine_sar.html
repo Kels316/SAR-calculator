@@ -586,9 +586,11 @@
     gap: 10px;
     height: 100%;
     padding: 24px 16px 24px 0;
-    overflow: hidden;
+    overflow-y: auto;
+    overflow-x: hidden;
     order: 1;   /* renders after results-content in DOM but visually on right */
   }
+
 
   /* results-content comes first in DOM, renders on left */
   .results-content { order: 0; }
@@ -805,28 +807,14 @@
     .map-inset { flex: 0 0 26vh; }
   }
 
-  /* ── Tablet landscape / ~1366px ── */
-  @media (max-width: 1366px) {
+  /* ── Tablet landscape / ~1024px ── */
+  @media (max-width: 1024px) {
     header { padding: 8px 16px; }
     .logo { width: 34px; height: 34px; }
     header h1 { font-size: 18px; letter-spacing: 1px; }
     .header-sub { display: none; }
 
-    /* Switch to page-scroll at tablet width: remove fixed app height,
-       let body scroll. Inputs panel sticks so the form stays in view. */
-    .app {
-      grid-template-columns: 260px 1fr;
-      height: auto;
-      min-height: calc(100dvh - 54px);
-    }
-    .inputs-panel {
-      position: sticky;
-      top: 54px;
-      height: calc(100dvh - 54px);
-      overflow-y: auto;
-    }
-    .results-panel { height: auto; overflow: visible; }
-    .right-column  { height: auto; overflow: visible; }
+    .app { grid-template-columns: 260px 1fr; height: calc(100dvh - 54px); }
 
     .step-header { padding: 9px 14px; }
     .step-body { padding: 4px 14px 12px; }
@@ -2818,30 +2806,6 @@ let _lkpDebounce = null;
 
 function initMap() {
   _map = L.map('sarMap', { zoomControl: true, attributionControl: true });
-
-  // On real touch devices, Leaflet captures all touch events and prevents
-  // page scroll — particularly problematic on tablets where the tide chart
-  // is below the map. Disable drag/zoom handlers on narrow viewports so
-  // touch scrolling passes through to the browser. Tap-to-set-LKP still works.
-  function applyMobileDrag() {
-    if (window.innerWidth <= 1366) {
-      _map.dragging.disable();
-      _map.touchZoom.disable();
-      _map.doubleClickZoom.disable();
-      _map.boxZoom.disable();
-      _map.keyboard.disable();
-      if (_map.tap) _map.tap.disable();
-    } else {
-      _map.dragging.enable();
-      _map.touchZoom.enable();
-      _map.doubleClickZoom.enable();
-      _map.boxZoom.enable();
-      _map.keyboard.enable();
-      if (_map.tap) _map.tap.enable();
-    }
-  }
-  applyMobileDrag();
-  window.addEventListener('resize', applyMobileDrag);
 
   // ESRI Ocean base — appropriate for marine SAR
   L.tileLayer(
