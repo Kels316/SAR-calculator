@@ -1360,13 +1360,17 @@ async function fetchLiveData() {
     const wxCode     = wc.weather_code;              // WMO
 
     // Hourly tide heights from nearest coastal bar
-    // Prefer sea_level_height_msl; fall back to wave_height if tidal data is unavailable
+    console.log('[SAR] barTide raw response:', JSON.stringify(barTide).slice(0, 800));
     const barTideTimes = barTide.hourly?.time ?? [];
     const rawTideH     = barTide.hourly?.sea_level_height_msl ?? [];
     const rawWaveH     = barTide.hourly?.wave_height           ?? [];
     const hasTideData  = rawTideH.some(v => v !== null && isFinite(v));
     const barTideHeights  = hasTideData ? rawTideH : rawWaveH;
     const barChartType    = hasTideData ? 'TIDE HEIGHT' : 'WAVE HEIGHT';
+    console.log('[SAR] barTideTimes.length:', barTideTimes.length,
+                '| rawTideH sample:', rawTideH.slice(0,3),
+                '| rawWaveH sample:', rawWaveH.slice(0,3),
+                '| hasTideData:', hasTideData);
 
     // Auto-populate Step 2: Current
     setLiveField('current_speed', 'tag_current_speed', currentSpd, 2);
