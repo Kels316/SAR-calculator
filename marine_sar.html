@@ -91,7 +91,7 @@
   /* ── LAYOUT ── */
   .app {
     display: grid;
-    grid-template-columns: 340px 1fr;
+    grid-template-columns: 374px 1fr;
     height: calc(100vh - 70px);
   }
 
@@ -170,7 +170,7 @@
     margin-left: 4px;
   }
   .field label span.live-tag {
-    color: var(--live);
+    display: none !important;
     font-size: 17px;
     margin-left: 6px;
     letter-spacing: 0.5px;
@@ -794,11 +794,14 @@
       </div>
       <div class="live-panel-body" id="livePanelBody">
         <div class="live-grid" id="liveGrid"></div>
-        <div class="live-disclaimer">
-          <strong>⚠ Data accuracy notice:</strong> Ocean currents and tides are modelled at ~8 km resolution.
-          Accuracy is limited in coastal areas. This data supplements but does not replace
-          nautical almanac data, local tide tables, or on-scene observations.
-          Fields auto-populated from live data are highlighted in <span style="color:var(--live)">green</span> and can be manually overridden.
+        <div style="margin-top:6px">
+          <span onclick="toggleDisclaimer()" style="cursor:pointer;font-family:var(--mono);font-size:14px;color:var(--muted);" id="disclaimerToggle">⚠ Data accuracy notice ▶</span>
+          <div id="liveDisclaimer" class="live-disclaimer" style="display:none;margin-top:4px">
+            Ocean currents and tides are modelled at ~8 km resolution.
+            Accuracy is limited in coastal areas. This data supplements but does not replace
+            nautical almanac data, local tide tables, or on-scene observations.
+            Fields auto-populated from live data are highlighted in <span style="color:var(--live)">green</span> and can be manually overridden.
+          </div>
         </div>
       </div>
     </div>
@@ -814,11 +817,11 @@
         <div class="field-row">
           <div class="field">
             <label>Speed <span class="unit">knots</span> <span class="live-tag" id="tag_current_speed" style="display:none">● LIVE</span></label>
-            <input type="number" id="current_speed" value="0.5" min="0" step="0.1">
+            <input type="number" id="current_speed" value="0.5" min="0" step="0.1" oninput="this.classList.remove('live-populated')">
           </div>
           <div class="field">
             <label>Direction (toward) <span class="unit">°T</span> <span class="live-tag" id="tag_current_dir" style="display:none">● LIVE</span></label>
-            <input type="number" id="current_dir" value="0" min="0" max="359" step="1">
+            <input type="number" id="current_dir" value="0" min="0" max="359" step="1" oninput="this.classList.remove('live-populated')">
             <div class="field-hint">Direction current flows TOWARD</div>
           </div>
         </div>
@@ -836,11 +839,11 @@
         <div class="field-row">
           <div class="field">
             <label>Wind speed <span class="unit">knots</span> <span class="live-tag" id="tag_wind_speed" style="display:none">● LIVE</span></label>
-            <input type="number" id="wind_speed" value="10" min="0" step="1">
+            <input type="number" id="wind_speed" value="10" min="0" step="1" oninput="this.classList.remove('live-populated')">
           </div>
           <div class="field">
             <label>Wind from <span class="unit">°T</span> <span class="live-tag" id="tag_wind_from" style="display:none">● LIVE</span></label>
-            <input type="number" id="wind_from" value="0" min="0" max="359" step="1">
+            <input type="number" id="wind_from" value="0" min="0" max="359" step="1" oninput="this.classList.remove('live-populated')">
             <div class="field-hint">Direction wind blows FROM</div>
           </div>
         </div>
@@ -921,7 +924,7 @@
         <div class="field-row" style="margin-top:10px">
           <div class="field">
             <label>Weather factor <span class="live-tag" id="tag_wf" style="display:none">● LIVE</span></label>
-            <input type="number" id="wf" value="0.9" min="0.1" max="1" step="0.05">
+            <input type="number" id="wf" value="0.9" min="0.1" max="1" step="0.05" oninput="this.classList.remove('live-populated')">
             <div class="field-hint">1.0=calm  0.7=mod  0.3=severe</div>
           </div>
           <div class="field">
@@ -1270,6 +1273,14 @@ let livePanelOpen = true;
 function toggleLivePanel() {
   livePanelOpen = !livePanelOpen;
   document.getElementById('livePanelBody').style.display = livePanelOpen ? 'block' : 'none';
+}
+
+let disclaimerOpen = false;
+function toggleDisclaimer() {
+  disclaimerOpen = !disclaimerOpen;
+  document.getElementById('liveDisclaimer').style.display = disclaimerOpen ? 'block' : 'none';
+  document.getElementById('disclaimerToggle').textContent =
+    disclaimerOpen ? '⚠ Data accuracy notice ▼' : '⚠ Data accuracy notice ▶';
 }
 
 async function fetchLiveData() {
