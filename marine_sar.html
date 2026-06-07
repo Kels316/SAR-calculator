@@ -1394,6 +1394,7 @@ async function fetchLiveData() {
     const barTideTimes    = tideOk ? tideResult.times    : [];
     const barTideHeights  = tideOk ? tideResult.heights  : [];
     const barTideExtremes = tideOk ? tideResult.extremes : null;
+    const barTideNowIdx   = tideOk ? (tideResult.nowIdx ?? 0) : 0;
     const tideStationName = tideOk ? tideResult.stationName : nearestBar.name;
     const barChartType    = tideOk ? 'Tide Height' : (tideErrMsg?.includes('429') ? 'Tide data unavailable (API limit reached)' : 'Tide data unavailable');
 
@@ -1457,7 +1458,7 @@ async function fetchLiveData() {
       swellH, swellDir, swellPeriod,
       airTemp, feelsLike, pressure, humidity, cloudCov, visibM, wxCode,
       barTideTimes, barTideHeights, tideStationName, nearestBar.distNm, barChartType,
-      fetchedAt, barTideExtremes
+      fetchedAt, barTideExtremes, barTideNowIdx
     );
 
     document.getElementById('livePanel').classList.add('visible');
@@ -1846,36 +1847,30 @@ async function getAustidesStations() {
  * Returns { times: ISO[], heights: number[], stationName: string, extremes: [] }
  */
 async function fetchTideData(lat, lon) {
-  // Return cached result if fresh
   const cacheKey = `${lat.toFixed(2)}_${lon.toFixed(2)}`;
   const cached = _tideCache[cacheKey];
   if (cached && (Date.now() - cached.fetchedAt) < TIDE_CACHE_TTL_MS) return cached.data;
 
-  // 1. Find nearest BOM station
+  // ── 1. Nearest BOM station ────────────────────────────────────────────────────────
   const stations = await getAustidesStations();
   let nearest = null, nearestDist = Infinity;
   for (const s of stations) {
     const dlat = s.latitude - lat, dlon = s.longitude - lon;
-    const d = Math.sqrt(dlat * dlat + dlon * dlon); // fast proxy for haversine
+    const d = Math.sqrt(dlat * dlat + dlon * dlon);
     if (d < nearestDist) { nearestDist = d; nearest = s; }
   }
   if (!nearest) throw new Error('austides: no station found');
 
-  // 2. Fetch yesterday + today + tomorrow + day-after in AEST (UTC+10)
-  //    BOM data: official harmonic predictions, heights in metres above LAT
-  //    Yesterday is attempted first for the 16h lookback; 422 is silently ignored.
+  // ── 2. Fetch BOM extremes (3 days forward) ───────────────────────────────────────
   const nowAEST = new Date(Date.now() + 10 * 3600 * 1000);
-  const dates = [-1, 0, 1, 2].map(d => {
+  const dates = [-1, 0, 1, 2, 3].map(d => {
     const dd = new Date(nowAEST.getTime() + d * 86400000);
     return dd.toISOString().slice(0, 10);
   });
-
   const responses = await Promise.all(dates.map(date =>
     fetch(`${AUSTIDES_BASE}/stations/${nearest.id}/tides?date=${date}`)
       .then(r => r.ok ? r.json() : null).catch(() => null)
   ));
-
-  // 3. Collect and sort all extremes
   const rawExts = [];
   for (const resp of responses) {
     if (!resp?.data) continue;
@@ -1885,45 +1880,151 @@ async function fetchTideData(lat, lon) {
   }
   if (rawExts.length < 2) throw new Error('austides: insufficient data');
   rawExts.sort((a, b) => a.t - b.t);
+  const bomExts = rawExts.filter((e, i) => i === 0 || e.t !== rawExts[i - 1].t);
 
-  // Deduplicate (same extreme can appear in adjacent date windows)
-  const exts = rawExts.filter((e, i) => i === 0 || e.t !== rawExts[i - 1].t);
+  const nowMs = Date.now();
+  const bomFuture = bomExts.filter(e => e.t > nowMs);
+  if (bomFuture.length < 2) throw new Error('austides: insufficient future data');
 
-  // Extend backward with synthetic extremes until the full 16 h lookback is covered.
-  // Each step uses the period between the first two known extremes.
-  const startMs = Date.now() - 16 * 3600 * 1000;
-  if (exts.length >= 2) {
-    while (exts[0].t > startMs) {
-      const halfPeriod = exts[1].t - exts[0].t;
-      exts.unshift({ t: exts[0].t - halfPeriod, h: exts[1].h, isHW: !exts[0].isHW });
+  // ── 3. Fetch Open-Meteo (48h past + 3 days future, UTC) ──────────────────────────
+  let omRaw = [];
+  try {
+    const omUrl = `https://marine-api.open-meteo.com/v1/marine` +
+      `?latitude=${lat.toFixed(4)}&longitude=${lon.toFixed(4)}` +
+      `&hourly=sea_level_height_msl&past_hours=48&forecast_days=3&timezone=UTC`;
+    const omResp = await fetch(omUrl);
+    if (omResp.ok) {
+      const omJson = await omResp.json();
+      const omT = omJson.hourly?.time;
+      const omH = omJson.hourly?.sea_level_height_msl;
+      if (omT && omH)
+        omRaw = omT.map((ts, i) => ({ ms: new Date(ts + ':00Z').getTime(), h: omH[i] }))
+                   .filter(p => p.h !== null && isFinite(p.h));
     }
+  } catch (e) { console.warn('Open-Meteo fetch failed:', e.message); }
+  if (omRaw.length < 10) throw new Error('Open-Meteo: insufficient data');
+
+  // ── 4. Height-only calibration using all BOM future extremes ─────────────────────
+  // Interpolate raw OM at each BOM extreme timestamp, measure difference, average.
+  // Height-only: timezone=UTC already corrects the main timing issue; applying a
+  // mean time shift to past OM would incorrectly drop points near nowMs.
+  function omRawInterp(ms) {
+    const idx = omRaw.findIndex(p => p.ms >= ms);
+    if (idx <= 0) return omRaw[0].h;
+    if (idx >= omRaw.length) return omRaw[omRaw.length - 1].h;
+    const p0 = omRaw[idx - 1], p1 = omRaw[idx];
+    return p0.h + (ms - p0.ms) / (p1.ms - p0.ms) * (p1.h - p0.h);
   }
+  const hOffsets = bomFuture.map(e => e.h - omRawInterp(e.t)).filter(isFinite);
+  const heightOffset = hOffsets.length ? hOffsets.reduce((a, b) => a + b, 0) / hOffsets.length : 0;
 
-  // All extremes in the chart window get labels (synthetics included — they're extrapolated estimates)
-  const realExts = exts.filter(e => e.t >= startMs - 3600000); // small buffer so edge extremes show
+  // Calibrated OM — ALL points, height corrected, no time filter.
+  // nowMs only affects rendering colour (grey/teal), not the data.
+  const calPts = omRaw
+    .map(p => ({ ms: p.ms, h: p.h + heightOffset, isBOM: false }));
 
-  // 4. Cosine-interpolate hourly heights over the 48 h window
-  const endMs = startMs + 48 * 3600 * 1000;
-  const times = [], heights = [];
-
-  for (let ms = startMs; ms <= endMs; ms += 3600 * 1000) {
-    times.push(new Date(ms).toISOString());
-    let lo = null, hi = null;
-    for (let i = 0; i < exts.length - 1; i++) {
-      if (exts[i].t <= ms && ms <= exts[i + 1].t) { lo = exts[i]; hi = exts[i + 1]; break; }
-    }
-    if (lo && hi) {
-      const frac = (ms - lo.t) / (hi.t - lo.t);
-      heights.push((lo.h + hi.h) / 2 + (lo.h - hi.h) / 2 * Math.cos(Math.PI * frac));
+  // ── 5. Past extremes from calibrated OM ──────────────────────────────────────────
+  const rawPastExts = [];
+  for (let i = 2; i < calPts.length - 2; i++) {
+    if (calPts[i].ms >= nowMs) break;   // only scan past OM data for past labels
+    const sb = calPts[i].h - calPts[i - 2].h;
+    const sa = calPts[i + 2].h - calPts[i].h;
+    if (sb > 0 && sa < 0) rawPastExts.push({ t: calPts[i].ms, h: calPts[i].h, isHW: true  });
+    if (sb < 0 && sa > 0) rawPastExts.push({ t: calPts[i].ms, h: calPts[i].h, isHW: false });
+  }
+  const dedupedPastExts = [];
+  for (const ext of rawPastExts) {
+    const near = dedupedPastExts.find(e => e.isHW === ext.isHW && Math.abs(e.t - ext.t) < 3 * 3600 * 1000);
+    if (near) {
+      if ( ext.isHW && ext.h > near.h) { near.t = ext.t; near.h = ext.h; }
+      if (!ext.isHW && ext.h < near.h) { near.t = ext.t; near.h = ext.h; }
     } else {
-      heights.push(ms < exts[0].t ? exts[0].h : exts[exts.length - 1].h);
+      dedupedPastExts.push({ ...ext });
     }
   }
+  const pastExts   = dedupedPastExts.slice(-2);
+  const futureExts = bomFuture.slice(0, 4);
+  if (pastExts.length + futureExts.length === 0) throw new Error('No tidal extremes found');
 
-  const result = { times, heights, stationName: nearest.name, extremes: realExts };
+  // ── 6. Spline control points: past OM hourly + BOM future extremes ───────────────
+  // Past zone: dense calibrated OM hourly points give the measured tidal shape.
+  // Future zone: only the sparse BOM HW/LW extremes (~6 h apart) — no OM future data.
+  // A single cubic spline through all of them produces a smooth curve with no seams.
+  const pastCalPts = calPts.filter(p => p.ms <= nowMs);
+  const bomFuturePts = bomFuture.map(e => ({ ms: e.t, h: e.h }));
+  const splinePts = [...pastCalPts, ...bomFuturePts].sort((a, b) => a.ms - b.ms);
+
+  // Natural cubic spline (handles non-uniform spacing)
+  function buildSpline(pts) {
+    const n = pts.length - 1;
+    if (n < 1) return () => pts[0].h;
+    const hArr = [], alpha = [], l = [], mu = [], z = [], c = new Array(n + 1), b = [], d = [];
+    for (let i = 0; i < n; i++) hArr[i] = pts[i + 1].ms - pts[i].ms;
+    for (let i = 1; i < n; i++)
+      alpha[i] = 3 / hArr[i] * (pts[i + 1].h - pts[i].h) - 3 / hArr[i - 1] * (pts[i].h - pts[i - 1].h);
+    l[0] = 1; mu[0] = 0; z[0] = 0;
+    for (let i = 1; i < n; i++) {
+      l[i] = 2 * (pts[i + 1].ms - pts[i - 1].ms) - hArr[i - 1] * mu[i - 1];
+      mu[i] = hArr[i] / l[i];
+      z[i] = (alpha[i] - hArr[i - 1] * z[i - 1]) / l[i];
+    }
+    l[n] = 1; z[n] = 0; c[n] = 0;
+    for (let j = n - 1; j >= 0; j--) {
+      c[j] = z[j] - mu[j] * c[j + 1];
+      b[j] = (pts[j + 1].h - pts[j].h) / hArr[j] - hArr[j] * (c[j + 1] + 2 * c[j]) / 3;
+      d[j] = (c[j + 1] - c[j]) / (3 * hArr[j]);
+    }
+    return function(ms) {
+      if (ms <= pts[0].ms) return pts[0].h;
+      if (ms >= pts[n].ms) return pts[n].h;
+      let lo = 0, hi = n - 1;
+      while (lo < hi) { const mid = (lo + hi) >> 1; if (pts[mid + 1].ms <= ms) lo = mid + 1; else hi = mid; }
+      const dx = ms - pts[lo].ms;
+      return pts[lo].h + b[lo] * dx + c[lo] * dx * dx + d[lo] * dx * dx * dx;
+    };
+  }
+  const spline = buildSpline(splinePts);
+
+  // Refine past extreme positions to the actual spline peak/trough.
+  // OM peak detection finds the hourly data point nearest the extreme; the spline
+  // peak may fall between two hourly points. Search ±90 min at 2-min resolution.
+  const REFINE_STEP = 2 * 60 * 1000;
+  const REFINE_WIN  = 90 * 60 * 1000;
+  const refinedPastExts = pastExts.map(ext => {
+    let bestT = ext.t, bestH = spline(ext.t);
+    for (let t = ext.t - REFINE_WIN; t <= ext.t + REFINE_WIN; t += REFINE_STEP) {
+      const h = spline(t);
+      if (ext.isHW && h > bestH) { bestH = h; bestT = t; }
+      if (!ext.isHW && h < bestH) { bestH = h; bestT = t; }
+    }
+    return { t: bestT, h: Math.round(bestH * 100) / 100, isHW: ext.isHW };
+  });
+  const chartExts = [...refinedPastExts, ...futureExts];
+
+  // ── 7. Resample to 15-min steps via spline ───────────────────────────────────────
+  const STEP    = 15 * 60 * 1000;
+  const startMs = Math.floor((chartExts[0].t - 1 * 3600 * 1000) / STEP) * STEP;
+  const endMs   = Math.ceil((chartExts[chartExts.length - 1].t + 1 * 3600 * 1000) / STEP) * STEP;
+
+  const times = [], heights = [];
+  for (let ms = startMs; ms <= endMs; ms += STEP) {
+    times.push(new Date(ms).toISOString());
+    heights.push(spline(ms));
+  }
+
+  const nowIdx = times.reduce((best, ts, i) =>
+    Math.abs(new Date(ts).getTime() - nowMs) < Math.abs(new Date(times[best]).getTime() - nowMs) ? i : best, 0);
+
+  const result = { times, heights, nowIdx, stationName: nearest.name, extremes: chartExts };
   _tideCache[cacheKey] = { data: result, fetchedAt: Date.now() };
   return result;
 }
+
+
+
+
+
+
 
 // COASTAL BAR DATABASE — nearest bar drives the tide chart
 // ═══════════════════════════════════════════════════════════
@@ -2018,7 +2119,7 @@ function updateWeatherPanel(
   swellH, swellDir, swellPeriod,
   airTemp, feelsLike, pressure, humidity, cloudCov, visibM, wxCode,
   tideTimes, tideHeights, barName, barDistNm, barChartType,
-  fetchTime, tideExtremes
+  fetchTime, tideExtremes, tideNowIdx
 ) {
   const n   = (v, dec, unit) => v !== null && v !== undefined && isFinite(v) ? `${v.toFixed(dec)}${unit}` : '—';
   const deg = v => v !== null && v !== undefined && isFinite(v) ? `${Math.round(v)}°T` : '—';
@@ -2068,7 +2169,7 @@ function updateWeatherPanel(
       const canvas = document.getElementById('tideChart');
       if (!canvas) return;
       if (canvas.offsetWidth > 0 && canvas.offsetHeight > 0) {
-        drawTideChart(tideTimes, tideHeights, canvas, tideExtremes);
+        drawTideChart(tideTimes, tideHeights, canvas, tideExtremes, tideNowIdx);
       } else if (attempt < 10) {
         setTimeout(() => tryDraw(attempt + 1), 50);
       }
@@ -2096,11 +2197,18 @@ function updateWeatherPanel(
   }
 }
 
-function drawTideChart(times, heights, canvas, extremes) {
-  // Preserve cached extremes when called without them (e.g. on resize)
-  const prevExts = canvas._tideData?.extremes ?? null;
-  canvas._tideData = { times, heights, extremes: extremes ?? prevExts };
-  const tideExts = canvas._tideData.extremes;
+function drawTideChart(times, heights, canvas, extremes, nowIdx) {
+  // Preserve cached data for resize redraws
+  const prev = canvas._tideData ?? {};
+  canvas._tideData = {
+    times:   times   ?? prev.times,
+    heights: heights ?? prev.heights,
+    extremes: extremes ?? prev.extremes,
+    nowIdx:  nowIdx  ?? prev.nowIdx ?? 0,
+  };
+  const { times: t, heights: v, extremes: tideExts, nowIdx: nIdx } = canvas._tideData;
+  if (!t || !v) return;
+
   const W = canvas.offsetWidth;
   const H = canvas.offsetHeight;
   if (W < 10 || H < 10) return;
@@ -2111,16 +2219,13 @@ function drawTideChart(times, heights, canvas, extremes) {
   const ctx = canvas.getContext('2d');
   ctx.scale(dpr, dpr);
 
+  const n = t.length;
+  const valid = v.filter(x => x !== null && isFinite(x));
+  if (!valid.length) return;
+
   const pad = { top: 32, right: 10, bottom: 26, left: 34 };
   const cW = W - pad.left - pad.right;
   const cH = H - pad.top - pad.bottom;
-
-  // First 48 hours
-  const n    = Math.min(48, times.length);
-  const t48  = times.slice(0, n);
-  const v48  = heights.slice(0, n);
-  const valid = v48.filter(v => v !== null && isFinite(v));
-  if (!valid.length) return;
 
   const minH = Math.min(...valid);
   const maxH = Math.max(...valid);
@@ -2130,51 +2235,85 @@ function drawTideChart(times, heights, canvas, extremes) {
   const vRng = vMax - vMin;
 
   const xAt = i => pad.left + (i / (n - 1)) * cW;
-  const yAt = v => pad.top  + (1 - (v - vMin) / vRng) * cH;
+  const yAt = val => pad.top + (1 - (val - vMin) / vRng) * cH;
 
   // Background
   ctx.fillStyle = '#0a0e14';
   ctx.fillRect(0, 0, W, H);
 
-  // Vertical grid lines every 6 h
+  // Vertical grid lines every 6 h (step-size agnostic)
+  const gridStepMs = 6 * 3600 * 1000;
+  const seriesStepMs = n > 1 ? (new Date(t[1]).getTime() - new Date(t[0]).getTime()) : 3600000;
+  const gridEvery = Math.max(1, Math.round(gridStepMs / seriesStepMs));
   ctx.strokeStyle = '#1e2d42';
   ctx.lineWidth = 1;
-  for (let i = 0; i < n; i += 6) {
+  for (let i = 0; i < n; i += gridEvery) {
     ctx.beginPath(); ctx.moveTo(xAt(i), pad.top); ctx.lineTo(xAt(i), pad.top + cH); ctx.stroke();
   }
 
-  // Tide area fill
-  ctx.beginPath();
-  ctx.moveTo(xAt(0), yAt(v48[0] ?? minH));
-  for (let i = 1; i < n; i++) {
-    if (v48[i] !== null) ctx.lineTo(xAt(i), yAt(v48[i]));
+  // ── Past fill (grey) ───────────────────────────────────────
+  if (nIdx > 0) {
+    ctx.beginPath();
+    ctx.moveTo(xAt(0), yAt(v[0] ?? minH));
+    for (let i = 1; i <= nIdx && i < n; i++) {
+      if (v[i] !== null) ctx.lineTo(xAt(i), yAt(v[i]));
+    }
+    ctx.lineTo(xAt(Math.min(nIdx, n-1)), pad.top + cH);
+    ctx.lineTo(xAt(0), pad.top + cH);
+    ctx.closePath();
+    ctx.fillStyle = 'rgba(140,160,180,0.10)';
+    ctx.fill();
   }
-  ctx.lineTo(xAt(n - 1), pad.top + cH);
-  ctx.lineTo(xAt(0),     pad.top + cH);
-  ctx.closePath();
-  ctx.fillStyle = 'rgba(0,180,216,0.13)';
-  ctx.fill();
 
-  // Tide curve
-  ctx.beginPath();
-  let started = false;
-  for (let i = 0; i < n; i++) {
-    if (v48[i] === null) { started = false; continue; }
-    if (!started) { ctx.moveTo(xAt(i), yAt(v48[i])); started = true; }
-    else ctx.lineTo(xAt(i), yAt(v48[i]));
+  // ── Future fill (teal) ─────────────────────────────────────
+  if (nIdx < n - 1) {
+    ctx.beginPath();
+    ctx.moveTo(xAt(nIdx), yAt(v[nIdx] ?? minH));
+    for (let i = nIdx + 1; i < n; i++) {
+      if (v[i] !== null) ctx.lineTo(xAt(i), yAt(v[i]));
+    }
+    ctx.lineTo(xAt(n - 1), pad.top + cH);
+    ctx.lineTo(xAt(nIdx),  pad.top + cH);
+    ctx.closePath();
+    ctx.fillStyle = 'rgba(0,180,216,0.13)';
+    ctx.fill();
   }
-  ctx.strokeStyle = '#00b4d8';
-  ctx.lineWidth = 1.5;
-  ctx.setLineDash([]);
-  ctx.stroke();
 
-  // "NOW" marker
-  const nowMs   = Date.now();
-  const startMs = new Date(t48[0]).getTime();
-  const endMs   = new Date(t48[n - 1]).getTime();
-  const nowFrac = (nowMs - startMs) / (endMs - startMs);
-  if (nowFrac >= 0 && nowFrac <= 1) {
-    const nowX = pad.left + nowFrac * cW;
+  // ── Past curve (grey) ──────────────────────────────────────
+  if (nIdx > 0) {
+    ctx.beginPath();
+    let started = false;
+    for (let i = 0; i <= nIdx && i < n; i++) {
+      if (v[i] === null) { started = false; continue; }
+      if (!started) { ctx.moveTo(xAt(i), yAt(v[i])); started = true; }
+      else ctx.lineTo(xAt(i), yAt(v[i]));
+    }
+    ctx.strokeStyle = '#5a7080';
+    ctx.lineWidth = 1.2;
+    ctx.setLineDash([]);
+    ctx.stroke();
+  }
+
+  // ── Future curve (teal) ────────────────────────────────────
+  if (nIdx < n) {
+    ctx.beginPath();
+    let started = false;
+    for (let i = nIdx; i < n; i++) {
+      if (v[i] === null) { started = false; continue; }
+      if (!started) { ctx.moveTo(xAt(i), yAt(v[i])); started = true; }
+      else ctx.lineTo(xAt(i), yAt(v[i]));
+    }
+    ctx.strokeStyle = '#00b4d8';
+    ctx.lineWidth = 1.5;
+    ctx.setLineDash([]);
+    ctx.stroke();
+  }
+
+  // ── NOW marker ─────────────────────────────────────────────
+  const startMs = new Date(t[0]).getTime();
+  const endMs   = new Date(t[n - 1]).getTime();
+  if (nIdx > 0 && nIdx < n) {
+    const nowX = xAt(nIdx);
     ctx.strokeStyle = '#f77f00';
     ctx.lineWidth = 1.2;
     ctx.setLineDash([3, 3]);
@@ -2186,7 +2325,7 @@ function drawTideChart(times, heights, canvas, extremes) {
     ctx.fillText('NOW', nowX + 2, pad.top + 9);
   }
 
-  // HW / LW markers — use exact TideCheck extreme times to avoid hourly-grid drift
+  // HW / LW markers
   const drawHWLW = (extMs, extH, isHW) => {
     const frac = (extMs - startMs) / (endMs - startMs);
     const x = pad.left + frac * cW;
@@ -2202,29 +2341,29 @@ function drawTideChart(times, heights, canvas, extremes) {
   };
 
   if (tideExts && tideExts.length > 0) {
-    // Exact extreme times from TideCheck — immune to grid shift between fetches
     for (const ext of tideExts) {
       if (ext.t < startMs || ext.t > endMs) continue;
       drawHWLW(ext.t, ext.h, ext.isHW);
     }
   } else {
-    // Fallback: detect from hourly curve when no extremes available
+    // Fallback: detect from curve when no extremes available
     for (let i = 1; i < n - 1; i++) {
-      if (v48[i] === null || v48[i-1] === null || v48[i+1] === null) continue;
-      const isHW = v48[i] > v48[i-1] && v48[i] > v48[i+1];
-      const isLW = v48[i] < v48[i-1] && v48[i] < v48[i+1];
+      if (v[i] === null || v[i-1] === null || v[i+1] === null) continue;
+      const isHW = v[i] > v[i-1] && v[i] > v[i+1];
+      const isLW = v[i] < v[i-1] && v[i] < v[i+1];
       if (!isHW && !isLW) continue;
-      drawHWLW(new Date(t48[i]).getTime(), v48[i], isHW);
+      drawHWLW(new Date(t[i]).getTime(), v[i], isHW);
     }
   }
 
-  // Time labels every 12 h
+  // Time labels every 6 h (step-size agnostic)
+  const labelEvery = Math.max(1, Math.round(6 * 3600 * 1000 / seriesStepMs));
   ctx.fillStyle = '#5a7080';
   ctx.font = '11px monospace';
   ctx.textAlign = 'center';
-  for (let i = 0; i < n; i += 12) {
-    const d = new Date(t48[i]);
-    ctx.fillText(d.toLocaleTimeString([], { hour:'2-digit', hour12:false }),
+  for (let i = 0; i < n; i += labelEvery) {
+    const d = new Date(t[i]);
+    ctx.fillText(d.toLocaleTimeString([], { hour:'2-digit', minute:'2-digit', hour12:false }),
                  xAt(i), pad.top + cH + 10);
     ctx.fillText(d.toLocaleDateString([], { day:'2-digit', month:'short' }),
                  xAt(i), pad.top + cH + 20);

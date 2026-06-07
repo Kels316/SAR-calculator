@@ -19,7 +19,7 @@ A browser-based Search and Rescue planning tool based on the Australian National
   - Track Line Search
 - **Live marine data** — fetches current ocean conditions from [Open-Meteo](https://open-meteo.com) and auto-populates current, wind, and weather factor inputs
 - **Live weather panel** — displays wave height/period/direction, swell, wind, air temperature, pressure, humidity, visibility, and sea surface temperature at the LKP
-- **Tide chart** — real tidal height predictions for the nearest coastal bar to the LKP, covering 48 hours, sourced from [TideCheck](https://tidecheck.com)
+- **Tide chart** — real tidal height predictions for the nearest coastal bar to the LKP; past tidal curve from calibrated Open-Meteo data, future from BOM official HW/LW predictions via [austides](https://austides.vercel.app), joined by a cubic spline for a smooth continuous curve
 - **Interactive map** — sticky Leaflet map inset showing the LKP and calculated search pattern
 - **Waypoint export** — GPX and KML export for upload to Google Earth or GPS devices
 - **Print / copy summary** — formatted SAR plan output for operational briefings
@@ -39,7 +39,8 @@ Enter LKP coordinates and click **Fetch Live Marine Data** to pull current condi
 | Air temperature, pressure, humidity | Open-Meteo Forecast API |
 | Sea surface temperature | Open-Meteo Marine API |
 | Weather factor (Wf) | Derived from significant wave height |
-| Tide chart (nearest coastal bar) | TideCheck API |
+| Tide chart — past curve | Open-Meteo Marine API (calibrated against BOM extremes) |
+| Tide chart — future curve | BOM official HW/LW predictions via austides proxy |
 
 Fields auto-populated from live data are highlighted in green. Editing any field manually removes the green highlight.
 
@@ -50,6 +51,12 @@ Ocean currents are modelled at ~8 km resolution — accuracy is limited in coast
 ## Coastal Bar Database
 
 The calculator includes 39 Australian coastal bar locations across QLD, NSW, VIC, SA, WA, and NT. When live data is fetched, the nearest bar to the LKP is identified and its tidal predictions are displayed — relevant to rescue crews who must cross the bar to reach the search area.
+
+The tide chart shows:
+- **Grey curve** — calibrated past tidal heights (Open-Meteo, height-corrected against BOM official extremes)
+- **Teal curve** — future tidal predictions from BOM official HW/LW data
+- **Labels** — 2 past and 4 future HW/LW extremes with time (browser local timezone) and height in metres
+- **Now line** — current time marker; has no effect on the curve itself
 
 ---
 
@@ -79,4 +86,4 @@ Open `marine_sar.html` in any modern browser — no server or installation requi
 - Australian National Search and Rescue Manual (AUSSAR) 2023
 - IAMSAR Manual Vol. II — Mission Co-ordination
 - Open-Meteo Marine & Forecast APIs — [docs](https://open-meteo.com/en/docs/marine-weather-api)
-- TideCheck Tide Prediction API — [tidecheck.com](https://tidecheck.com)
+- austides BOM tide proxy — [austides.vercel.app](https://austides.vercel.app)
