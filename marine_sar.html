@@ -18,6 +18,7 @@
     --text:      #cdd6e0;
     --muted:     #5a7080;
     --label:     #8aa8bc;
+    --live:      #7bed9f;
     --mono:      'Share Tech Mono', monospace;
     --sans:      'Barlow Condensed', sans-serif;
     --body:      'Barlow', sans-serif;
@@ -166,6 +167,12 @@
     font-size: 9px;
     margin-left: 4px;
   }
+  .field label span.live-tag {
+    color: var(--live);
+    font-size: 9px;
+    margin-left: 6px;
+    letter-spacing: 0.5px;
+  }
   .field input[type=text],
   .field input[type=number],
   .field select {
@@ -184,6 +191,10 @@
   }
   .field input:focus,
   .field select:focus { border-color: var(--accent); }
+  .field input.live-populated {
+    border-color: var(--live);
+    box-shadow: 0 0 0 1px rgba(123,237,159,0.15);
+  }
   .field select {
     background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8'%3E%3Cpath d='M1 1l5 5 5-5' stroke='%235a7080' stroke-width='1.5' fill='none'/%3E%3C/svg%3E");
     background-repeat: no-repeat;
@@ -207,6 +218,112 @@
 
   .custom-leeway { display: none; margin-top: 10px; }
   .custom-leeway.visible { display: block; }
+
+  /* ── LIVE DATA FETCH ── */
+  .fetch-btn {
+    width: 100%;
+    margin-top: 14px;
+    background: rgba(0,180,216,0.1);
+    color: var(--accent);
+    border: 1px solid var(--accent);
+    border-radius: 3px;
+    font-family: var(--mono);
+    font-size: 11px;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    padding: 8px 12px;
+    cursor: pointer;
+    transition: all 0.15s;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+  }
+  .fetch-btn:hover { background: rgba(0,180,216,0.2); }
+  .fetch-btn:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+  }
+  .fetch-btn.loading { opacity: 0.7; cursor: wait; }
+  .spin {
+    display: inline-block;
+    animation: spin 0.8s linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  /* ── LIVE DATA STATUS PANEL ── */
+  .live-panel {
+    display: none;
+    border-bottom: 1px solid var(--border);
+    background: rgba(123,237,159,0.04);
+    border-left: 2px solid var(--live);
+  }
+  .live-panel.visible { display: block; }
+  .live-panel-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 10px 20px;
+    cursor: pointer;
+  }
+  .live-panel-title {
+    font-family: var(--mono);
+    font-size: 10px;
+    letter-spacing: 1px;
+    color: var(--live);
+    text-transform: uppercase;
+  }
+  .live-panel-time {
+    font-family: var(--mono);
+    font-size: 9px;
+    color: var(--muted);
+  }
+  .live-panel-body {
+    padding: 0 20px 14px;
+  }
+  .live-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+    margin-bottom: 10px;
+  }
+  .live-kv {
+    background: rgba(0,0,0,0.3);
+    border: 1px solid var(--border);
+    border-radius: 3px;
+    padding: 7px 10px;
+  }
+  .live-kv-label {
+    font-family: var(--mono);
+    font-size: 9px;
+    color: var(--muted);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    margin-bottom: 2px;
+  }
+  .live-kv-value {
+    font-family: var(--mono);
+    font-size: 12px;
+    color: var(--live);
+  }
+  .live-kv-value.muted { color: var(--text); }
+  .live-disclaimer {
+    font-size: 9px;
+    color: var(--muted);
+    line-height: 1.5;
+    border-top: 1px solid var(--border);
+    padding-top: 8px;
+    margin-top: 4px;
+  }
+  .live-disclaimer strong { color: var(--accent2); }
+  .live-error {
+    font-family: var(--mono);
+    font-size: 10px;
+    color: var(--danger);
+    margin-top: 8px;
+    display: none;
+  }
+  .live-error.visible { display: block; }
 
   /* ── CALCULATE BUTTON ── */
   .calc-btn-wrap {
@@ -460,6 +577,7 @@
   <div class="header-right">
     <div class="badge">AUSSAR 2023</div>
     <div class="badge">IAMSAR</div>
+    <div class="badge" id="liveDataBadge" style="display:none; border-color: var(--live); color: var(--live);">● LIVE DATA</div>
   </div>
 </header>
 
@@ -489,6 +607,30 @@
           <label>Elapsed time since LKP <span class="unit">hours</span></label>
           <input type="number" id="elapsed_h" value="3" min="0" step="0.5">
         </div>
+
+        <!-- Live data fetch button -->
+        <button class="fetch-btn" id="fetchBtn" onclick="fetchLiveData()" title="Fetches current ocean current, wind, wave, and sea surface data from Open-Meteo for the LKP coordinates">
+          <span id="fetchIcon">🌐</span>
+          <span id="fetchLabel">Fetch Live Marine Data</span>
+        </button>
+        <div class="live-error" id="fetchError"></div>
+      </div>
+    </div>
+
+    <!-- LIVE DATA STATUS PANEL (appears after successful fetch) -->
+    <div class="live-panel" id="livePanel">
+      <div class="live-panel-header" onclick="toggleLivePanel()">
+        <div class="live-panel-title">● Live Data — Open-Meteo</div>
+        <div class="live-panel-time" id="liveTime">—</div>
+      </div>
+      <div class="live-panel-body" id="livePanelBody">
+        <div class="live-grid" id="liveGrid"></div>
+        <div class="live-disclaimer">
+          <strong>⚠ Data accuracy notice:</strong> Ocean currents and tides are modelled at ~8 km resolution.
+          Accuracy is limited in coastal areas. This data supplements but does not replace
+          nautical almanac data, local tide tables, or on-scene observations.
+          Fields auto-populated from live data are highlighted in <span style="color:var(--live)">green</span> and can be manually overridden.
+        </div>
       </div>
     </div>
 
@@ -502,11 +644,11 @@
       <div class="step-body">
         <div class="field-row">
           <div class="field">
-            <label>Speed <span class="unit">knots</span></label>
+            <label>Speed <span class="unit">knots</span> <span class="live-tag" id="tag_current_speed" style="display:none">● LIVE</span></label>
             <input type="number" id="current_speed" value="0.5" min="0" step="0.1">
           </div>
           <div class="field">
-            <label>Direction (toward) <span class="unit">°T</span></label>
+            <label>Direction (toward) <span class="unit">°T</span> <span class="live-tag" id="tag_current_dir" style="display:none">● LIVE</span></label>
             <input type="number" id="current_dir" value="0" min="0" max="359" step="1">
             <div class="field-hint">Direction current flows TOWARD</div>
           </div>
@@ -524,11 +666,11 @@
       <div class="step-body">
         <div class="field-row">
           <div class="field">
-            <label>Wind speed <span class="unit">knots</span></label>
+            <label>Wind speed <span class="unit">knots</span> <span class="live-tag" id="tag_wind_speed" style="display:none">● LIVE</span></label>
             <input type="number" id="wind_speed" value="10" min="0" step="1">
           </div>
           <div class="field">
-            <label>Wind from <span class="unit">°T</span></label>
+            <label>Wind from <span class="unit">°T</span> <span class="live-tag" id="tag_wind_from" style="display:none">● LIVE</span></label>
             <input type="number" id="wind_from" value="0" min="0" max="359" step="1">
             <div class="field-hint">Direction wind blows FROM</div>
           </div>
@@ -609,7 +751,7 @@
         </div>
         <div class="field-row" style="margin-top:10px">
           <div class="field">
-            <label>Weather factor</label>
+            <label>Weather factor <span class="live-tag" id="tag_wf" style="display:none">● LIVE</span></label>
             <input type="number" id="wf" value="0.9" min="0.1" max="1" step="0.05">
             <div class="field-hint">1.0=calm  0.7=mod  0.3=severe</div>
           </div>
@@ -824,7 +966,7 @@
 
 <script>
 // ═══════════════════════════════════════════════════════════
-// GEODETIC & MATH ENGINE  (ported from marine_sar_calculator.py)
+// GEODETIC & MATH ENGINE
 // ═══════════════════════════════════════════════════════════
 const R_NM = 3440.065;
 
@@ -888,7 +1030,185 @@ function parseLatLon(raw) {
 }
 
 // ═══════════════════════════════════════════════════════════
-// PATTERN CALCULATORS  — return { total, startLat, startLon, waypoints }
+// LIVE DATA — OPEN-METEO
+// ═══════════════════════════════════════════════════════════
+
+// Map significant wave height (m) → Beaufort sea state label and Wf suggestion
+function waveHeightToSeaState(h) {
+  if (h === null || h === undefined) return { label: 'Unknown', wf: 0.9 };
+  if (h < 0.1)  return { label: 'Sea 0 — Calm (glassy)',        wf: 1.00 };
+  if (h < 0.5)  return { label: 'Sea 1-2 — Calm/Smooth',        wf: 1.00 };
+  if (h < 1.25) return { label: 'Sea 3 — Slight',               wf: 0.95 };
+  if (h < 2.5)  return { label: 'Sea 4-5 — Moderate/Rough',     wf: 0.85 };
+  if (h < 4.0)  return { label: 'Sea 6-7 — Very rough/High',    wf: 0.70 };
+  if (h < 6.0)  return { label: 'Sea 8 — Very High',            wf: 0.45 };
+  return             { label: 'Sea 9 — Phenomenal',              wf: 0.30 };
+}
+
+function setLiveField(inputId, tagId, value, decimals = 1) {
+  const input = document.getElementById(inputId);
+  const tag   = document.getElementById(tagId);
+  if (value !== null && value !== undefined && !isNaN(value)) {
+    input.value = parseFloat(value.toFixed(decimals));
+    input.classList.add('live-populated');
+    tag.style.display = 'inline';
+  }
+}
+
+function clearLiveTags() {
+  ['current_speed','current_dir','wind_speed','wind_from','wf'].forEach(id => {
+    document.getElementById(id).classList.remove('live-populated');
+  });
+  ['tag_current_speed','tag_current_dir','tag_wind_speed','tag_wind_from','tag_wf'].forEach(id => {
+    document.getElementById(id).style.display = 'none';
+  });
+}
+
+let livePanelOpen = true;
+function toggleLivePanel() {
+  livePanelOpen = !livePanelOpen;
+  document.getElementById('livePanelBody').style.display = livePanelOpen ? 'block' : 'none';
+}
+
+async function fetchLiveData() {
+  // Parse LKP first
+  let lat, lon;
+  try { lat = parseLatLon(document.getElementById('lkp_lat').value); }
+  catch(e) { showFetchError('Enter a valid latitude first'); return; }
+  try { lon = parseLatLon(document.getElementById('lkp_lon').value); }
+  catch(e) { showFetchError('Enter a valid longitude first'); return; }
+  if (isNaN(lat) || isNaN(lon)) { showFetchError('Could not parse LKP coordinates'); return; }
+
+  // Set loading state
+  const btn = document.getElementById('fetchBtn');
+  const icon = document.getElementById('fetchIcon');
+  const label = document.getElementById('fetchLabel');
+  btn.disabled = true;
+  btn.classList.add('loading');
+  icon.innerHTML = '<span class="spin">⟳</span>';
+  label.textContent = 'Fetching…';
+  document.getElementById('fetchError').classList.remove('visible');
+
+  try {
+    // Parallel fetch: marine API (current, waves, SST, sea level) + forecast API (wind)
+    const marineUrl = `https://marine-api.open-meteo.com/v1/marine?latitude=${lat}&longitude=${lon}` +
+      `&current=ocean_current_velocity,ocean_current_direction,wave_height,wave_direction,` +
+      `wave_period,sea_surface_temperature,sea_level_height_msl` +
+      `&velocity_unit=knots&cell_selection=sea`;
+
+    const windUrl = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}` +
+      `&current=wind_speed_10m,wind_direction_10m,wind_gusts_10m` +
+      `&wind_speed_unit=kn`;
+
+    const [marineResp, windResp] = await Promise.all([
+      fetch(marineUrl),
+      fetch(windUrl)
+    ]);
+
+    if (!marineResp.ok) throw new Error(`Marine API: ${marineResp.status} ${marineResp.statusText}`);
+    if (!windResp.ok)   throw new Error(`Forecast API: ${windResp.status} ${windResp.statusText}`);
+
+    const marine = await marineResp.json();
+    const wind   = await windResp.json();
+
+    if (marine.error) throw new Error(`Marine API: ${marine.reason}`);
+    if (wind.error)   throw new Error(`Forecast API: ${wind.reason}`);
+
+    const mc = marine.current;
+    const wc = wind.current;
+
+    const currentSpd = mc.ocean_current_velocity;    // knots, toward
+    const currentDir = mc.ocean_current_direction;   // °T, toward
+    const waveH      = mc.wave_height;               // m
+    const waveDir    = mc.wave_direction;             // °T, from
+    const wavePeriod = mc.wave_period;               // s
+    const sst        = mc.sea_surface_temperature;   // °C
+    const seaLevel   = mc.sea_level_height_msl;      // m above MSL
+
+    const windSpd    = wc.wind_speed_10m;            // knots
+    const windFrom   = wc.wind_direction_10m;        // °T, from
+    const windGust   = wc.wind_gusts_10m;            // knots
+
+    // Auto-populate Step 2: Current
+    setLiveField('current_speed', 'tag_current_speed', currentSpd, 2);
+    setLiveField('current_dir',   'tag_current_dir',   currentDir !== null ? Math.round(currentDir) : null, 0);
+
+    // Auto-populate Step 3: Wind
+    setLiveField('wind_speed', 'tag_wind_speed', windSpd !== null ? Math.round(windSpd) : null, 0);
+    setLiveField('wind_from',  'tag_wind_from',  windFrom !== null ? Math.round(windFrom) : null, 0);
+
+    // Auto-populate Step 5: Weather factor from wave height
+    const seaState = waveHeightToSeaState(waveH);
+    setLiveField('wf', 'tag_wf', seaState.wf, 2);
+
+    // Build the live data status panel
+    const fetchedAt = new Date();
+    const timeStr = fetchedAt.toLocaleTimeString([], { hour:'2-digit', minute:'2-digit' }) +
+                    ' ' + fetchedAt.toLocaleDateString([], { day:'2-digit', month:'short' });
+    document.getElementById('liveTime').textContent = timeStr + ' (local)';
+
+    const seaLevelStr = seaLevel !== null
+      ? (seaLevel >= 0 ? `+${seaLevel.toFixed(2)}` : seaLevel.toFixed(2)) + ' m'
+      : 'N/A';
+    const sstStr      = sst !== null ? `${sst.toFixed(1)} °C` : 'N/A';
+    const waveHStr    = waveH !== null ? `${waveH.toFixed(1)} m` : 'N/A';
+    const waveDirStr  = waveDir !== null ? `from ${Math.round(waveDir)}°T` : '';
+    const wavePStr    = wavePeriod !== null ? `  ${wavePeriod.toFixed(0)} s` : '';
+    const gustStr     = windGust !== null ? `  (gust ${Math.round(windGust)} kn)` : '';
+    const currSpdStr  = currentSpd !== null ? `${currentSpd.toFixed(2)} kn` : 'N/A';
+    const currDirStr  = currentDir !== null ? ` → ${Math.round(currentDir)}°T` : '';
+
+    document.getElementById('liveGrid').innerHTML = `
+      <div class="live-kv">
+        <div class="live-kv-label">Ocean Current</div>
+        <div class="live-kv-value">${currSpdStr}${currDirStr}</div>
+      </div>
+      <div class="live-kv">
+        <div class="live-kv-label">Wind (10 m)</div>
+        <div class="live-kv-value">${windSpd !== null ? Math.round(windSpd) : 'N/A'} kn from ${windFrom !== null ? Math.round(windFrom) : '—'}°T${gustStr}</div>
+      </div>
+      <div class="live-kv">
+        <div class="live-kv-label">Wave Height</div>
+        <div class="live-kv-value">${waveHStr} ${waveDirStr}${wavePStr}</div>
+      </div>
+      <div class="live-kv">
+        <div class="live-kv-label">Sea State</div>
+        <div class="live-kv-value muted" style="font-size:10px">${seaState.label}</div>
+      </div>
+      <div class="live-kv">
+        <div class="live-kv-label">Sea Surf. Temp</div>
+        <div class="live-kv-value muted">${sstStr}</div>
+      </div>
+      <div class="live-kv">
+        <div class="live-kv-label">Sea Level (MSL)</div>
+        <div class="live-kv-value muted">${seaLevelStr}</div>
+      </div>
+    `;
+
+    document.getElementById('livePanel').classList.add('visible');
+    document.getElementById('liveDataBadge').style.display = '';
+    livePanelOpen = true;
+    document.getElementById('livePanelBody').style.display = 'block';
+
+  } catch(err) {
+    showFetchError('Fetch failed: ' + err.message);
+    console.error('Live data fetch error:', err);
+  } finally {
+    btn.disabled = false;
+    btn.classList.remove('loading');
+    icon.innerHTML = '🌐';
+    label.textContent = 'Fetch Live Marine Data';
+  }
+}
+
+function showFetchError(msg) {
+  const el = document.getElementById('fetchError');
+  el.textContent = '⚠  ' + msg;
+  el.classList.add('visible');
+}
+
+// ═══════════════════════════════════════════════════════════
+// PATTERN CALCULATORS
 // ═══════════════════════════════════════════════════════════
 
 function patternParallel(dLat, dLon, W, S, area, r, driftDir) {
@@ -898,7 +1218,6 @@ function patternParallel(dLat, dLon, W, S, area, r, driftDir) {
   const trackHdg  = driftDir % 360;
   const acrossHdg = (driftDir + 90) % 360;
 
-  // Start corner: half-box back along across, half-side back along track, then S/2 in
   let p = destinationPoint(dLat, dLon, (acrossHdg+180)%360, (nTrk*S)/2);
   p     = destinationPoint(p.lat, p.lon,  (trackHdg+180)%360,  side/2);
   p     = destinationPoint(p.lat, p.lon,  acrossHdg,           S/2);
@@ -961,7 +1280,7 @@ function patternCreeping(dLat, dLon, W, S, area, r, driftDir) {
 
   let p = destinationPoint(dLat, dLon, (acrossHdg+180)%360, (nTrk*S)/2);
   p     = destinationPoint(p.lat, p.lon,  (trackHdg+180)%360,  side/2);
-  p     = destinationPoint(p.lat, p.lon,  acrossHdg,           W/2);
+  p     = destinationPoint(p.lat, p.lon,  acrossHdg,           S/2);
 
   const wps = [];
   let cur = p, hdg = trackHdg;
@@ -1036,7 +1355,6 @@ let lastSummary = '';
 function calculate() {
   clearError();
 
-  // ── Parse LKP ──
   let lkpLat, lkpLon;
   try { lkpLat = parseLatLon(document.getElementById('lkp_lat').value); }
   catch(e) { showError('Invalid latitude: ' + document.getElementById('lkp_lat').value); return; }
@@ -1044,7 +1362,6 @@ function calculate() {
   catch(e) { showError('Invalid longitude: ' + document.getElementById('lkp_lon').value); return; }
   if (isNaN(lkpLat) || isNaN(lkpLon)) { showError('Could not parse LKP coordinates.'); return; }
 
-  // ── Inputs ──
   const elapsedH    = getFloat('elapsed_h', 3);
   const currentSpd  = getFloat('current_speed', 0.5);
   const currentDir  = getFloat('current_dir', 0);
@@ -1071,27 +1388,23 @@ function calculate() {
   const transitH   = getFloat('transit_h', 0.5);
   const patType    = document.getElementById('pattern').value;
 
-  // ── Drift vectors ──
-  const wcSpd = 0.03 * windSpd;        // wind current
-  const lwSpd = leewayRate * windSpd;  // leeway
+  const wcSpd = 0.03 * windSpd;
+  const lwSpd = leewayRate * windSpd;
 
-  const twc   = addVectors(currentSpd, currentDir, wcSpd, windTo);   // TWC
-  const sd    = addVectors(twc.spd, twc.dir, lwSpd, windTo);          // Surface Drift
+  const twc   = addVectors(currentSpd, currentDir, wcSpd, windTo);
+  const sd    = addVectors(twc.spd, twc.dir, lwSpd, windTo);
 
   const distNm = sd.spd * elapsedH;
   const datum  = destinationPoint(lkpLat, lkpLon, sd.dir, distNm);
 
-  // ── Errors ──
   const De = sd.spd * elapsedH * driftUnc;
   const E  = Math.sqrt(X*X + Y*Y + De*De);
   const r  = 2 * E;
   const area = Math.PI * r * r;
 
-  // ── Coverage ──
   const S   = W / C;
   const POD = (1 - Math.exp(-C)) * 100;
 
-  // ── Pattern ──
   let pat;
   if      (patType === 'parallel')   pat = patternParallel(datum.lat, datum.lon, W, S, area, r, sd.dir);
   else if (patType === 'expanding')  pat = patternExpanding(datum.lat, datum.lon, W, S, area, r);
@@ -1107,11 +1420,9 @@ function calculate() {
   const searchH = Z / assetSpeed;
   const totalH  = searchH + transitH;
 
-  // ── Render ──
   document.getElementById('placeholder').style.display = 'none';
   document.getElementById('results').style.display     = 'block';
 
-  // Drift section
   setEl('r_lkp',        formatLatLon(lkpLat, lkpLon));
   setEl('r_lkp_dec',    formatLatLonDec(lkpLat, lkpLon));
   setEl('r_elapsed',    `${elapsedH.toFixed(1)} h`);
@@ -1120,12 +1431,10 @@ function calculate() {
   setEl('r_datum',      formatLatLon(datum.lat, datum.lon));
   setEl('r_datum_dec',  formatLatLonDec(datum.lat, datum.lon));
 
-  // Search area
   setEl('r_E',      `${E.toFixed(2)} nm`);
   setEl('r_radius', `${r.toFixed(2)} nm`);
   setEl('r_area',   `${area.toFixed(2)} nm²`);
 
-  // Detection
   setEl('r_pod_pct', `${POD.toFixed(1)}%`);
   document.getElementById('podFill').style.width = Math.min(POD, 100) + '%';
   setEl('r_W', `${W.toFixed(3)} nm`);
@@ -1133,7 +1442,6 @@ function calculate() {
   setEl('r_C', C.toFixed(2));
   setEl('r_Z', `${Z.toFixed(1)} nm`);
 
-  // Pattern
   const patNames = {
     parallel: 'Parallel Track', expanding: 'Expanding Square',
     sector: 'Sector Search', creeping: 'Creeping Line Ahead',
@@ -1144,7 +1452,6 @@ function calculate() {
   setEl('r_wp1_dec', formatLatLonDec(pat.startLat, pat.startLon));
   setEl('r_time', `${totalH.toFixed(2)} h  (${(totalH*60).toFixed(0)} min)`);
 
-  // Waypoints table
   const tbody = document.getElementById('wpBody');
   tbody.innerHTML = '';
   const maxWp = 30;
@@ -1163,28 +1470,28 @@ function calculate() {
     tbody.appendChild(tr);
   }
 
-  // Drift breakdown
   setEl('r_current', `${currentSpd.toFixed(2)} kn → ${currentDir.toFixed(0)}°T`);
   setEl('r_wc',      `${wcSpd.toFixed(2)} kn → ${windTo.toFixed(0)}°T`);
   setEl('r_leeway',  `${lwSpd.toFixed(2)} kn → ${windTo.toFixed(0)}°T  (${(leewayRate*100).toFixed(1)}% wind)`);
 
-  // Build copy summary
   lastSummary = buildSummary({
     lkpLat, lkpLon, elapsedH, sd, distNm, datum, E, r, area,
     W, S, C, POD, Z, totalH, patNames, patType, pat
   });
 
-  // Scroll results to top
   document.getElementById('resultsPanel').scrollTop = 0;
 }
 
 function buildSummary(d) {
+  const liveNote = document.getElementById('livePanel').classList.contains('visible')
+    ? '\n  (Current & wind values from Open-Meteo live data)'
+    : '';
   const lines = [
     '════════════════════════════════════════',
     '  MARINE SAR PLAN',
     '  Australian National SAR Manual 2023',
     '════════════════════════════════════════',
-    '',
+    liveNote,
     '── INCIDENT ─────────────────────────',
     `  LKP          : ${formatLatLon(d.lkpLat, d.lkpLon)}`,
     `                 ${formatLatLonDec(d.lkpLat, d.lkpLon)}`,
@@ -1252,7 +1559,11 @@ function resetForm() {
   document.getElementById('transit_h').value     = '0.5';
   document.getElementById('results').style.display = 'none';
   document.getElementById('placeholder').style.display = 'flex';
+  document.getElementById('livePanel').classList.remove('visible');
+  document.getElementById('liveDataBadge').style.display = 'none';
+  document.getElementById('fetchError').classList.remove('visible');
   clearError();
+  clearLiveTags();
 }
 </script>
 </body>
