@@ -585,6 +585,7 @@
 
   /* ── MAP INSET ── */
   .map-inset {
+    position: relative;
     flex: 0 0 30vh;
     min-height: 160px;
     border: 1px solid var(--border);
@@ -1461,6 +1462,9 @@ async function fetchLiveData() {
     document.getElementById('liveDataBadge').style.display = '';
     livePanelOpen = true;
     document.getElementById('livePanelBody').style.display = 'block';
+
+    // Ensure map is zoomed to LKP (handles cases where oninput didn't fire)
+    updateMapLKP();
 
   } catch(err) {
     showFetchError('Fetch failed: ' + err.message);
