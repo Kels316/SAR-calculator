@@ -862,7 +862,7 @@
             <option value="0.020">Person in water (life jacket)   — 2.0% wind</option>
             <option value="0.040">Life raft — sea anchor deployed — 4.0% wind</option>
             <option value="0.075">Life raft — no sea anchor       — 7.5% wind</option>
-            <option value="0.030">Small open vessel / dinghy      — 3.0% wind</option>
+            <option value="0.030" selected>Small open vessel / dinghy      — 3.0% wind</option>
             <option value="0.045">Dismasted / disabled yacht      — 4.5% wind</option>
             <option value="0.025">Powerboat / small cabin cruiser — 2.5% wind</option>
             <option value="custom">Custom leeway rate...</option>
@@ -966,7 +966,7 @@
           <label>Search pattern</label>
           <select id="pattern">
             <option value="parallel">Parallel Track — large areas, multiple assets</option>
-            <option value="expanding">Expanding Square — small area, single asset</option>
+            <option value="expanding" selected>Expanding Square — small area, single asset</option>
             <option value="sector">Sector Search — high-confidence datum</option>
             <option value="creeping">Creeping Line Ahead — elongated/drift-driven</option>
             <option value="trackline">Track Line Search — known vessel route</option>
@@ -2446,7 +2446,7 @@ function resetForm() {
   document.getElementById('current_dir').value   = '0';
   document.getElementById('wind_speed').value    = '10';
   document.getElementById('wind_from').value     = '0';
-  document.getElementById('leeway_type').value   = '0.025';
+  document.getElementById('leeway_type').value   = '0.030';
   document.getElementById('lkp_error').value     = '0.5';
   document.getElementById('asset_error').value   = '0.1';
   document.getElementById('drift_unc').value     = '0.3';
@@ -2455,7 +2455,7 @@ function resetForm() {
   document.getElementById('ff').value            = '1.0';
   document.getElementById('nf').value            = '1.0';
   document.getElementById('coverage').value      = '1.0';
-  document.getElementById('pattern').value       = 'parallel';
+  document.getElementById('pattern').value       = 'expanding';
   document.getElementById('asset_speed').value   = '10';
   document.getElementById('transit_h').value     = '0.5';
   document.getElementById('results').style.display = 'none';
