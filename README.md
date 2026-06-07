@@ -10,17 +10,18 @@ A browser-based Search and Rescue planning tool based on the Australian National
 
 - **Drift & datum calculation** — combines ocean current, wind current (3% rule), and leeway vectors to estimate the current position of a search object from its last known position
 - **Search area sizing** — probabilistic error ellipse using LKP error, asset GPS error, and drift uncertainty
-- **Detection parameters** — sweep width, track spacing, and probability of detection (POD) based on target type, weather, fatigue, and visibility factors
+- **Detection parameters** — sweep width, track spacing, and probability of detection (POD) based on target type, weather, fatigue, and visibility factors. POD calculated using AUSSAR Figure D-5:13 Marine Probability of Detection curves
+- **Manual search radius** — override the calculated radius (2 × total position error) with a user-specified value in nautical miles
 - **Five search patterns** with full waypoint generation:
-  - Parallel Track
-  - Expanding Square
-  - Sector Search
-  - Creeping Line Ahead
-  - Track Line Search
+  - Parallel Track — legs parallel to drift; S/2 inset from bounding square
+  - Expanding Square — from AUSSAR Table 4-3; N legs and total track distance looked up by radius and track spacing; first leg into the wind
+  - Sector Search — two-sweep AUSSAR vessel sector search (Figure 4-10); 120° starboard turns, 9R per sweep, 30° rotation between sweeps
+  - Creeping Line Ahead — legs perpendicular to drift direction; advances in drift direction
+  - Track Line Search — along a known vessel route
 - **Live marine data** — fetches current ocean conditions from [Open-Meteo](https://open-meteo.com) and auto-populates current, wind, and weather factor inputs
 - **Live weather panel** — displays wave height/period/direction, swell, wind, air temperature, pressure, humidity, visibility, and sea surface temperature at the LKP
 - **Tide chart** — real tidal height predictions for the nearest coastal bar to the LKP; past tidal curve from calibrated Open-Meteo data, future from BOM official HW/LW predictions via [austides](https://austides.vercel.app), joined by a cubic spline for a smooth continuous curve
-- **Interactive map** — tap to place a draggable LKP pin, or type coordinates; map shows LKP and calculated search pattern
+- **Interactive map** — tap to place a draggable LKP pin, or type coordinates; map shows LKP, search area circle, dotted bounding square (oriented to pattern direction), and calculated search pattern
 - **Waypoint export** — GPX and KML export for upload to Google Earth or GPS devices
 - **Print / copy summary** — formatted SAR plan output for operational briefings
 
@@ -84,6 +85,9 @@ Open `marine_sar.html` in any modern browser — no server or installation requi
 ## References
 
 - Australian National Search and Rescue Manual (AUSSAR) 2023
+  - Figure 4-10 — Vessel Sector Search pattern geometry
+  - Table 4-3 — Number of search legs and total track distance for Expanding Square by radius and track spacing
+  - Figure D-5:13 — Marine Probability of Detection curves (First through Fifth search)
 - IAMSAR Manual Vol. II — Mission Co-ordination
 - Open-Meteo Marine & Forecast APIs — [docs](https://open-meteo.com/en/docs/marine-weather-api)
 - austides BOM tide proxy — [austides.vercel.app](https://austides.vercel.app)

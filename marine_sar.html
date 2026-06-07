@@ -91,7 +91,7 @@
   .app {
     display: grid;
     grid-template-columns: 374px 1fr;
-    height: calc(100vh - 70px);
+    height: calc(100dvh - 70px);
   }
 
   /* ── LEFT PANEL — INPUTS ── */
@@ -378,9 +378,19 @@
 
   /* ── RIGHT PANEL — RESULTS ── */
   .results-panel {
+    display: flex;
+    flex-direction: row;
+    overflow: hidden;
+    background: var(--bg);
+    gap: 0;
+  }
+
+  /* Scrollable results area — sits beside the right column */
+  .results-content {
+    flex: 1;
+    min-width: 0;
     overflow-y: auto;
     padding: 24px 28px;
-    background: var(--bg);
   }
 
   .placeholder {
@@ -568,20 +578,20 @@
   ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
   ::-webkit-scrollbar-thumb:hover { background: var(--muted); }
 
-  /* ── RIGHT COLUMN (map + weather, sticky float) ── */
+  /* ── RIGHT COLUMN (map + weather + tide) ── */
   .right-column {
-    position: sticky;
-    top: 0;
-    float: right;
-    width: calc(50% - 16px);
-    min-width: 280px;
-    margin: 0 0 16px 16px;
+    flex: 0 0 clamp(280px, 42%, 460px);
     display: flex;
     flex-direction: column;
     gap: 10px;
-    height: calc(100vh - 70px - 48px);
-    z-index: 10;
+    height: 100%;
+    padding: 24px 16px 24px 0;
+    overflow: hidden;
+    order: 1;   /* renders after results-content in DOM but visually on right */
   }
+
+  /* results-content comes first in DOM, renders on left */
+  .results-content { order: 0; }
 
   /* ── MAP INSET ── */
   .map-inset {
@@ -738,6 +748,142 @@
     font-size: 8px !important;
   }
   .leaflet-control-attribution a { color: var(--muted) !important; }
+
+  /* ══════════════════════════════════════════════════════════
+     RESPONSIVE
+     ══════════════════════════════════════════════════════════ */
+
+  /* ── Large laptop / smaller desktop ── */
+  @media (max-width: 1440px) {
+    .app { grid-template-columns: 340px 1fr; }
+  }
+
+  /* ── 13" MacBook Pro / ~1280px viewport ── */
+  @media (max-width: 1280px) {
+    header { padding: 10px 20px; }
+    .logo { width: 40px; height: 40px; }
+    header h1 { font-size: 22px; }
+    .header-sub { font-size: 13px; }
+    .badge { font-size: 13px; padding: 2px 7px; }
+
+    .app { grid-template-columns: 300px 1fr; height: calc(100dvh - 62px); }
+
+    .step-header { padding: 11px 16px; }
+    .step-body { padding: 4px 16px 14px; }
+    .step-title { font-size: 15px; }
+    .step-num { font-size: 14px; width: 22px; height: 22px; }
+
+    .field label { font-size: 13px; }
+    .field label span.unit { font-size: 13px; }
+    .field input[type=text],
+    .field input[type=number],
+    .field select { font-size: 14px; padding: 6px 9px; }
+    .field-hint { font-size: 11px; }
+    .fetch-btn { font-size: 14px; padding: 7px 10px; }
+    .calc-btn { font-size: 15px; letter-spacing: 1.5px; }
+    .reset-btn { font-size: 14px; }
+    .calc-btn-wrap { padding: 14px 16px; }
+
+    .results-content { padding: 16px 18px; }
+    .right-column { padding: 16px 12px 16px 0; }
+    .result-section-header { font-size: 15px; }
+    .kv-label { font-size: 13px; }
+    .kv-value { font-size: 14px; }
+    .kv-value.big { font-size: 18px; }
+    .kv-sub { font-size: 13px; }
+    .wp-table th { font-size: 13px; padding: 7px 12px; }
+    .wp-table td { font-size: 13px; padding: 6px 12px; }
+    .wp-note { font-size: 13px; }
+    .pod-bar-label { font-size: 14px; }
+    .pod-bar-label span:last-child { font-size: 18px; }
+    .live-kv-label { font-size: 13px; }
+    .live-kv-value { font-size: 13px; }
+    .live-panel-title { font-size: 14px; }
+    .live-disclaimer { font-size: 13px; }
+    .action-btn { font-size: 14px; padding: 6px 12px; }
+
+    .map-inset { flex: 0 0 26vh; }
+  }
+
+  /* ── Tablet landscape / ~1024px ── */
+  @media (max-width: 1024px) {
+    header { padding: 8px 16px; }
+    .logo { width: 34px; height: 34px; }
+    header h1 { font-size: 18px; letter-spacing: 1px; }
+    .header-sub { display: none; }
+
+    .app { grid-template-columns: 260px 1fr; height: calc(100dvh - 54px); }
+
+    .step-header { padding: 9px 14px; }
+    .step-body { padding: 4px 14px 12px; }
+
+    .results-content { padding: 12px 14px; }
+    .right-column { padding: 12px 8px 12px 0; }
+    .map-inset { flex: 0 0 22vh; min-height: 130px; }
+    .tide-panel { min-height: 120px; }
+  }
+
+  /* ── Tablet portrait and below: single-column stacked layout ── */
+  @media (max-width: 768px) {
+    header { padding: 10px 14px; }
+    .logo { width: 36px; height: 36px; }
+    header h1 { font-size: 18px; }
+    .header-sub { display: none; }
+
+    html, body { overflow-y: auto; }
+
+    .app {
+      display: block;
+      height: auto;
+    }
+
+    /* Inputs: full width, scrolls with page */
+    .inputs-panel {
+      width: 100%;
+      height: auto;
+      border-right: none;
+      border-bottom: 2px solid var(--accent);
+      overflow-y: visible;
+    }
+
+    /* Results: full width, switch to column stack */
+    .results-panel {
+      flex-direction: column;
+      height: auto;
+      overflow-y: visible;
+      overflow-x: hidden;
+    }
+
+    .results-content {
+      width: 100%;
+      overflow-y: visible;
+      padding: 12px 14px;
+      order: 1;  /* results below map on mobile */
+    }
+
+    /* Right column: full width block, fixed height, above results */
+    .right-column {
+      flex: 0 0 auto;
+      width: 100%;
+      height: 480px;
+      padding: 12px 14px;
+      order: 0;
+    }
+
+    .map-inset { flex: 0 0 200px; }
+    .tide-panel { min-height: 160px; flex: 1; }
+    .weather-panel { flex: 0 0 auto; }
+
+    /* 3-col result grids → 2-col */
+    .result-grid.cols3 { grid-template-columns: 1fr 1fr; }
+    .result-grid.cols3 .kv:nth-child(3n) { border-right: 1px solid var(--border); }
+    .result-grid.cols3 .kv:nth-child(even) { border-right: none; }
+
+    /* Waypoint table: horizontal scroll */
+    .result-section { overflow-x: auto; }
+
+    .actions-row { flex-wrap: wrap; }
+  }
 
   /* ── PRINT ── */
   @media print {
@@ -975,9 +1121,14 @@
       </div>
       <div class="step-body">
         <div class="field">
+          <label>Search Radius <span class="unit">nm</span></label>
+          <input type="number" id="search_radius" value="5" min="0" max="50" step="0.5">
+          <div class="field-hint">Overrides the calculated radius (2 × total position error). Set to 0 for calculated value.</div>
+        </div>
+        <div class="field">
           <label>Coverage Factor (C)</label>
           <input type="number" id="coverage" value="1.0" min="0.1" max="5" step="0.1">
-          <div class="field-hint">0.5=39% POD · 1.0=63% · 2.0=86% · 3.0=95%</div>
+          <div class="field-hint">0.5=47% POD · 1.0=78% · 1.5=93% · 2.0=99% (AUSSAR Fig D-5:13)</div>
         </div>
         <div class="field">
           <label>Search pattern</label>
@@ -1050,6 +1201,9 @@
       </div>
 
     </div><!-- /right-column -->
+
+    <!-- Scrollable results content sits beside the right column -->
+    <div class="results-content">
 
     <div class="placeholder" id="placeholder">
       <div class="placeholder-icon">🧭</div>
@@ -1191,6 +1345,8 @@
       </div>
 
     </div><!-- /results -->
+
+    </div><!-- /results-content -->
   </div><!-- /results-panel -->
 
 </div><!-- /app -->
@@ -1494,87 +1650,239 @@ function showFetchError(msg) {
 // ═══════════════════════════════════════════════════════════
 // PATTERN CALCULATORS
 // ═══════════════════════════════════════════════════════════
+// AUSSAR Figure D-5:13 — Marine POD (First Search) lookup table
+// Values digitised from the First Search curve, anchored to Table 4-2:
+//   C=0.5 → 47%,  C=1.0 → 78%
+// For repeated searches: POD_n = 1 − (1 − POD_1/100)^n × 100
+const _AUSSAR_POD = [
+  [0.00,  0], [0.05,  5], [0.10,  9], [0.15, 13], [0.20, 17],
+  [0.25, 22], [0.30, 27], [0.35, 32], [0.40, 37], [0.45, 42],
+  [0.50, 47], [0.55, 51], [0.60, 55], [0.65, 59], [0.70, 63],
+  [0.75, 67], [0.80, 70], [0.85, 73], [0.90, 75], [0.95, 77],
+  [1.00, 78], [1.10, 82], [1.20, 86], [1.30, 89], [1.40, 91],
+  [1.50, 93], [1.60, 95], [1.70, 96], [1.80, 97], [1.90, 98],
+  [2.00, 99]
+];
+
+function aussarPOD(C) {
+  if (C <= 0) return 0;
+  const tbl = _AUSSAR_POD;
+  if (C >= tbl[tbl.length - 1][0]) {
+    // Extrapolate asymptotically toward 100%
+    return 100 * (1 - Math.exp(-(C - 2.0) * 3) * 0.01);
+  }
+  // Linear interpolation
+  for (let i = 1; i < tbl.length; i++) {
+    if (C <= tbl[i][0]) {
+      const t = (C - tbl[i-1][0]) / (tbl[i][0] - tbl[i-1][0]);
+      return tbl[i-1][1] + t * (tbl[i][1] - tbl[i-1][1]);
+    }
+  }
+  return 0;
+}
+
+// ═══════════════════════════════════════════════════════════
 
 function patternParallel(dLat, dLon, W, S, area, r, driftDir) {
-  const side      = Math.sqrt(area);
-  const nTrk      = Math.ceil(side / S);
-  const total     = nTrk * side;
+  // Search area: square with sides tangential to circle of radius r (side = 2r).
+  // Pattern fills that square with S/2 inset on all four sides.
+  // Track length = 2r - S;  nTrk = round(2r / S);  across span = nTrk * S centred on datum.
+  const side      = 2 * r - S;
+  const nTrk      = Math.max(1, Math.round(2 * r / S));
   const trackHdg  = driftDir % 360;
   const acrossHdg = (driftDir + 90) % 360;
 
-  let p = destinationPoint(dLat, dLon, (acrossHdg+180)%360, (nTrk*S)/2);
-  p     = destinationPoint(p.lat, p.lon,  (trackHdg+180)%360,  side/2);
-  p     = destinationPoint(p.lat, p.lon,  acrossHdg,           S/2);
+  // CSP: S/2 inset from back-left corner of the square.
+  // Step 1: move r opposite acrossHdg (to left square edge).
+  // Step 2: move side/2 = (r - S/2) opposite trackHdg (to back square edge, S/2 inset).
+  // Step 3: move S/2 in acrossHdg (S/2 inset from left edge). No extra track offset needed.
+  let p = destinationPoint(dLat, dLon, (acrossHdg+180)%360, r);
+  p     = destinationPoint(p.lat, p.lon,  (trackHdg+180)%360,  side / 2);
+  p     = destinationPoint(p.lat, p.lon,  acrossHdg,           S / 2);
 
   const wps = [];
-  let cur = p, hdg = trackHdg;
+  let cur = p, hdg = trackHdg, total = 0;
+
   for (let i = 0; i < nTrk; i++) {
     const end = destinationPoint(cur.lat, cur.lon, hdg, side);
-    wps.push({ lat: cur.lat, lon: cur.lon, note: `Track ${i+1} start  hdg ${hdg.toFixed(0)}°T` });
-    wps.push({ lat: end.lat, lon: end.lon, note: `Track ${i+1} end    turn 180°` });
-    const nxt = destinationPoint(end.lat, end.lon, acrossHdg, S);
-    hdg = (hdg + 180) % 360;
-    cur = nxt;
+    wps.push({ lat: cur.lat, lon: cur.lon,
+      note: `Track ${i+1} — hdg ${hdg.toFixed(0)}°T` });
+    total += side;
+
+    if (i < nTrk - 1) {
+      // Turn point at end of track, then crossleg S in the creep direction
+      const nxt = destinationPoint(end.lat, end.lon, acrossHdg, S);
+      wps.push({ lat: end.lat, lon: end.lon,
+        note: `Track ${i+1} end — 90° turn onto crossleg` });
+      wps.push({ lat: nxt.lat, lon: nxt.lon,
+        note: `Crossleg ${i+1} end — 90° turn onto track ${i+2}` });
+      total += S;
+      hdg = (hdg + 180) % 360;
+      cur = nxt;
+    } else {
+      wps.push({ lat: end.lat, lon: end.lon,
+        note: `Track ${i+1} end — search complete` });
+    }
   }
+
   return { total, startLat: wps[0].lat, startLon: wps[0].lon, waypoints: wps };
 }
 
-function patternExpanding(dLat, dLon, W, S, area, r) {
-  if (!r || r <= 0) r = Math.sqrt(area / Math.PI);
-  const nPairs = Math.max(1, Math.ceil(r / S));
-  const headings = [0, 90, 180, 270];
-  const wps = [{ lat: dLat, lon: dLon, note: 'START — Datum' }];
-  let cur = { lat: dLat, lon: dLon }, hIdx = 0, total = 0;
-  for (let i = 1; i <= nPairs; i++) {
-    for (let j = 0; j < 2; j++) {
-      const leg = i * S;
-      const hdg = headings[hIdx % 4];
-      const nxt = destinationPoint(cur.lat, cur.lon, hdg, leg);
-      wps.push({ lat: nxt.lat, lon: nxt.lon, note: `Leg ${wps.length}  ${leg.toFixed(3)} nm  hdg ${hdg}°T → turn right` });
-      total += leg;
-      cur = nxt;
-      hIdx++;
+// ── AUSSAR Table 4-3: Expanding Square — N legs, D nm total track ──────────
+// Rows = radius 1–20 nm; columns = S index into [0.5,1,2,3,4,5,10].
+// null = combination not listed in table.
+// Note: S=4, R=7–10 printed as D=36 in AUSSAR — corrected to D=96 (formula consistent).
+const _EXP_S_VALS = [0.5, 1, 2, 3, 4, 5, 10];
+const _EXP_TBL = {   // keyed by R (integer nm); each value = array[7] of [N,D] or null
+   1: [[9,12],  [5,8],    null,     null,     null,     null,     null   ],
+   2: [[17,40], [9,24],   null,     null,     null,     null,     null   ],
+   3: [[25,84], [13,48],  [5,16],   null,     null,     null,     null   ],
+   4: [[33,144],[17,80],  [9,48],   [5,24],   null,     null,     null   ],
+   5: [[41,220],[21,120], [9,48],   [9,72],   null,     null,     null   ],
+   6: [[49,312],[25,168], [13,96],  [9,72],   [5,32],   null,     null   ],
+   7: [[57,420],[29,224], [13,96],  [9,72],   [9,96],   [5,40],   null   ],
+   8: [[65,544],[33,288], [17,160], [13,144], [9,96],   [9,120],  null   ],
+   9: [[73,684],[37,360], [17,160], [13,144], [9,96],   [9,120],  null   ],
+  10: [[81,840],[41,440], [21,240], [13,144], [9,96],   [9,120],  null   ],
+  11: [null,    [45,528], [21,240], [17,240], [13,192], [9,120],  null   ],
+  12: [null,    [49,624], [25,336], [17,240], [13,192], [9,120],  null   ],
+  13: [null,    [53,728], [25,336], [17,240], [13,192], [13,240], null   ],
+  14: [null,    [57,840], [29,448], [21,360], [13,192], [13,240], null   ],
+  15: [null,    null,     [29,448], [21,360], [17,320], [13,240], [5,80] ],
+  16: [null,    null,     [33,576], [21,360], [17,320], [13,240], [9,240]],
+  17: [null,    null,     [33,576], [25,504], [17,320], [13,240], [9,240]],
+  18: [null,    null,     [37,720], [25,504], [17,320], [17,400], [9,240]],
+  19: [null,    null,     [37,720], [25,504], [21,480], [17,400], [9,240]],
+  20: [null,    null,     [41,880], [29,672], [21,480], [17,400], [9,240]],
+};
+
+function _expLookup(r, S) {
+  const rR = Math.max(1, Math.min(20, Math.round(r)));
+  // Closest S index
+  let si = 0, best = Infinity;
+  _EXP_S_VALS.forEach((sv, i) => { const d = Math.abs(S - sv); if (d < best) { best = d; si = i; } });
+  // Find nearest non-null entry (try same R, then widen)
+  const row = _EXP_TBL[rR];
+  let entry = row[si];
+  if (!entry) {
+    for (let d = 1; d < _EXP_S_VALS.length && !entry; d++) {
+      if (si - d >= 0 && row[si - d]) { entry = row[si - d]; si = si - d; }
+      else if (si + d < _EXP_S_VALS.length && row[si + d]) { entry = row[si + d]; si = si + d; }
     }
   }
-  return { total, startLat: dLat, startLon: dLon, waypoints: wps };
+  return { N: entry[0], D: entry[1], rUsed: rR, sUsed: _EXP_S_VALS[si] };
+}
+
+function patternExpanding(dLat, dLon, W, S, area, r, driftDir) {
+  if (!r || r <= 0) r = Math.sqrt(area / Math.PI);
+  const lk = _expLookup(r, S);
+  const { N, D, rUsed, sUsed } = lk;
+  const maxSteps = (N - 1) / 2;   // = 2k
+
+  const wps = [];
+  let cur = { lat: dLat, lon: dLon }, total = 0;
+  wps.push({ lat: dLat, lon: dLon,
+    note: `Datum — expanding square  (table: R=${rUsed}nm S=${sUsed}nm → N=${N} legs, D=${D}nm)` });
+
+  for (let j = 1; j <= N; j++) {
+    const legLen = Math.min(Math.ceil(j / 2), maxSteps) * S;
+    const hdg    = (driftDir + 90 * (j - 1)) % 360;
+    const nxt    = destinationPoint(cur.lat, cur.lon, hdg, legLen);
+    const isLast = (j === N);
+    wps.push({ lat: nxt.lat, lon: nxt.lon,
+      note: `Leg ${j}  ${legLen.toFixed(2)} nm  hdg ${hdg.toFixed(0)}°T${isLast ? ' — search complete' : ' — turn 90° stbd'}` });
+    total += legLen;
+    cur = nxt;
+  }
+
+  return { total, N, D, rUsed, sUsed, startLat: dLat, startLon: dLon, waypoints: wps };
 }
 
 function patternSector(dLat, dLon, W, S, area, r, driftDir) {
+  // AUSSAR vessel sector search (Figure 4-10).
+  // Two sweeps: sweep 2 is sweep 1 rotated 30° stbd.  Total track = 2×9R + transit.
+  //
+  // Each sweep: CSP (on circle, driftDir+180°) → pass through datum → Tip1 (driftDir)
+  //   → 120° stbd crossleg → XL1 → pass through datum → Tip2 → crossleg → XL2
+  //   → pass through datum → Tip3 → crossleg → CSP.  9R per sweep.
+  //
+  // Transition: CSP(sweep1) → datum → CSP(sweep2) then repeat pattern at driftDir+30°.
+
   if (!r || r <= 0) r = Math.sqrt(area / Math.PI);
-  if (r < S) r = S * 1.5;
-  const thetaDeg = 360 / Math.max(3, Math.ceil(360 / toDeg(Math.asin(Math.min(S/r, 1)))));
-  const nRad     = Math.round(360 / thetaDeg);
-  const total    = nRad * 2 * r;
-  const wps      = [{ lat: dLat, lon: dLon, note: 'START — Datum' }];
-  for (let i = 0; i < nRad; i++) {
-    const hdg = (driftDir + i * thetaDeg) % 360;
-    const out = destinationPoint(dLat, dLon, hdg, r);
-    wps.push({ lat: out.lat, lon: out.lon, note: `Radial ${i+1} out  ${r.toFixed(2)} nm on ${hdg.toFixed(0)}°T` });
-    wps.push({ lat: dLat,    lon: dLon,    note: `Radial ${i+1} return to datum` });
+
+  // Build waypoints for one sweep given an initial bearing
+  function sweepWps(dir, sweepNum) {
+    // offsets: [CSP, Tip1, XL1, Tip2, XL2, Tip3]
+    const offsets = [180, 0, 60, 240, 300, 120];
+    const brgs    = offsets.map(o => (dir + o) % 360);
+    const pts     = brgs.map(b => destinationPoint(dLat, dLon, b, r));
+    const s       = sweepNum;
+    return [
+      { lat: pts[0].lat, lon: pts[0].lon,
+        note: `S${s} CSP — commence sweep ${s}  ${brgs[0].toFixed(0)}T  ${r.toFixed(2)} nm from datum` },
+      { lat: pts[1].lat, lon: pts[1].lon,
+        note: `S${s} Leg 1 tip  ${brgs[1].toFixed(0)}T — turn 120 stbd onto crossleg` },
+      { lat: pts[2].lat, lon: pts[2].lon,
+        note: `S${s} Crossleg 1 end  ${brgs[2].toFixed(0)}T — head back to datum` },
+      { lat: pts[3].lat, lon: pts[3].lon,
+        note: `S${s} Leg 2 tip  ${brgs[3].toFixed(0)}T — turn 120 stbd onto crossleg` },
+      { lat: pts[4].lat, lon: pts[4].lon,
+        note: `S${s} Crossleg 2 end  ${brgs[4].toFixed(0)}T — head back to datum` },
+      { lat: pts[5].lat, lon: pts[5].lon,
+        note: `S${s} Leg 3 tip  ${brgs[5].toFixed(0)}T — turn 120 stbd onto crossleg` },
+      { lat: pts[0].lat, lon: pts[0].lon,
+        note: `S${s} CSP  ${brgs[0].toFixed(0)}T — sweep ${s} complete` },
+    ];
   }
-  return { total, startLat: dLat, startLon: dLon, waypoints: wps };
+
+  const dir2   = (driftDir + 30) % 360;
+  const sweep1 = sweepWps(driftDir, 1);
+  const sweep2 = sweepWps(dir2, 2);
+
+  // Transition: S1 CSP → datum, 30° stbd turn.  Vessel is now heading dir2,
+  // so WP9 is Tip1 of sweep 2 directly ahead — no separate CSP2 needed.
+  const transition = [
+    { lat: dLat, lon: dLon,
+      note: `Datum — turn 30 stbd, commence sweep 2` },
+  ];
+
+  // sweep2.slice(1) skips the S2 CSP entry; vessel starts sweep 2 outbound from datum
+  const finalDatum = [{ lat: dLat, lon: dLon, note: 'Datum — search complete' }];
+  const wps   = [...sweep1, ...transition, ...sweep2.slice(1), ...finalDatum];
+  const total = 9 * r + r + 8 * r + r;  // sweep1 + CSP1→datum + sweep2 + final datum
+
+  return { total, startLat: sweep1[0].lat, startLon: sweep1[0].lon, waypoints: wps };
 }
 
 function patternCreeping(dLat, dLon, W, S, area, r, driftDir) {
-  const side      = Math.sqrt(area);
-  const nTrk      = Math.ceil(side / S);
-  const total     = nTrk * side;
-  const trackHdg  = driftDir % 360;
-  const acrossHdg = (driftDir + 90) % 360;
+  // Creeping line ahead: legs run PERPENDICULAR to drift; pattern advances in drift direction.
+  // Same square boundary as parallel track (side = 2r, S/2 inset on all edges).
+  const side      = 2 * r - S;
+  const nTrk      = Math.max(1, Math.round(2 * r / S));
+  const trackHdg  = (driftDir + 90) % 360;   // legs across drift
+  const acrossHdg = driftDir % 360;           // advance in drift direction
 
-  let p = destinationPoint(dLat, dLon, (acrossHdg+180)%360, (nTrk*S)/2);
-  p     = destinationPoint(p.lat, p.lon,  (trackHdg+180)%360,  side/2);
-  p     = destinationPoint(p.lat, p.lon,  acrossHdg,           S/2);
+  // CSP: start at updrift edge, S/2 inset in drift direction, S/2 inset in track direction
+  let p = destinationPoint(dLat, dLon, (acrossHdg+180)%360, r);
+  p     = destinationPoint(p.lat, p.lon,  (trackHdg+180)%360,  side / 2);
+  p     = destinationPoint(p.lat, p.lon,  acrossHdg,           S / 2);
 
   const wps = [];
-  let cur = p, hdg = trackHdg;
+  let cur = p, hdg = trackHdg, total = 0;
   for (let i = 0; i < nTrk; i++) {
     const end = destinationPoint(cur.lat, cur.lon, hdg, side);
-    wps.push({ lat: cur.lat, lon: cur.lon, note: `Track ${i+1} start  hdg ${hdg.toFixed(0)}°T` });
-    wps.push({ lat: end.lat, lon: end.lon, note: `Track ${i+1} end    turn 180°` });
-    const nxt = destinationPoint(end.lat, end.lon, acrossHdg, S);
-    hdg = (hdg + 180) % 360;
-    cur = nxt;
+    wps.push({ lat: cur.lat, lon: cur.lon, note: `Track ${i+1} — hdg ${hdg.toFixed(0)}°T` });
+    total += side;
+    if (i < nTrk - 1) {
+      wps.push({ lat: end.lat, lon: end.lon, note: `Track ${i+1} end — 90° turn onto crossleg` });
+      const nxt = destinationPoint(end.lat, end.lon, acrossHdg, S);
+      wps.push({ lat: nxt.lat, lon: nxt.lon, note: `Crossleg ${i+1} end — 90° turn onto track ${i+2}` });
+      total += S;
+      hdg = (hdg + 180) % 360;
+      cur = nxt;
+    } else {
+      wps.push({ lat: end.lat, lon: end.lon, note: `Track ${i+1} end — search complete` });
+    }
   }
   return { total, startLat: wps[0].lat, startLon: wps[0].lon, waypoints: wps };
 }
@@ -1684,15 +1992,17 @@ function calculate() {
 
   const De = sd.spd * elapsedH * driftUnc;
   const E  = Math.sqrt(X*X + Y*Y + De*De);
-  const r  = 2 * E;
+  const rCalc = 2 * E;
+  const rManual = getFloat('search_radius', 0);
+  const r  = (rManual > 0) ? rManual : rCalc;
   const area = Math.PI * r * r;
 
   const S   = W / C;
-  const POD = (1 - Math.exp(-C)) * 100;
+  const POD = aussarPOD(C);
 
   let pat;
   if      (patType === 'parallel')   pat = patternParallel(datum.lat, datum.lon, W, S, area, r, sd.dir);
-  else if (patType === 'expanding')  pat = patternExpanding(datum.lat, datum.lon, W, S, area, r);
+  else if (patType === 'expanding')  pat = patternExpanding(datum.lat, datum.lon, W, S, area, r, windFrom);
   else if (patType === 'sector')     pat = patternSector(datum.lat, datum.lon, W, S, area, r, sd.dir);
   else if (patType === 'creeping')   pat = patternCreeping(datum.lat, datum.lon, W, S, area, r, sd.dir);
   else {
@@ -1766,7 +2076,9 @@ function calculate() {
 
   lastCalc = { lkpLat, lkpLon, datum, r, patNames, patType, pat };
 
-  updateMapPattern(lkpLat, lkpLon, datum, r, pat);
+  // Expanding square: bounding square aligns to wind direction; others align to drift
+  const squareDir = (patType === 'expanding') ? windFrom : sd.dir;
+  updateMapPattern(lkpLat, lkpLon, datum, r, pat, patType, squareDir);
 
   document.getElementById('resultsPanel').scrollTop = 0;
 }
@@ -2209,7 +2521,8 @@ function updateWeatherPanel(
       ctx.fillStyle = '#0a0e14';
       ctx.fillRect(0, 0, canvas.offsetWidth, canvas.offsetHeight);
       ctx.fillStyle = '#5a7080';
-      ctx.font = '13px monospace';
+      const errFs = Math.max(10, Math.round(13 * Math.min(1.2, canvas.offsetWidth / 480)));
+      ctx.font = `${errFs}px monospace`;
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
       const msg = '⚠ Tide data unavailable — check console for details';
@@ -2244,7 +2557,15 @@ function drawTideChart(times, heights, canvas, extremes, nowIdx) {
   const valid = v.filter(x => x !== null && isFinite(x));
   if (!valid.length) return;
 
-  const pad = { top: 32, right: 10, bottom: 26, left: 34 };
+  // Scale all text and spacing to canvas width — base is 480px
+  const scale = Math.max(0.72, Math.min(1.2, W / 480));
+  const fs  = Math.max(9, Math.round(11 * scale));   // label font size
+  const pad = {
+    top:    Math.round(30 * scale),
+    right:  Math.max(6, Math.round(10 * scale)),
+    bottom: Math.round(26 * scale),
+    left:   Math.max(26, Math.round(34 * scale)),
+  };
   const cW = W - pad.left - pad.right;
   const cH = H - pad.top - pad.bottom;
 
@@ -2341,9 +2662,9 @@ function drawTideChart(times, heights, canvas, extremes, nowIdx) {
     ctx.beginPath(); ctx.moveTo(nowX, pad.top); ctx.lineTo(nowX, pad.top + cH); ctx.stroke();
     ctx.setLineDash([]);
     ctx.fillStyle = '#f77f00';
-    ctx.font = '11px monospace';
+    ctx.font = `${fs}px monospace`;
     ctx.textAlign = 'left';
-    ctx.fillText('NOW', nowX + 2, pad.top + 9);
+    ctx.fillText('NOW', nowX + 2, pad.top + Math.round(9 * scale));
   }
 
   // HW / LW markers
@@ -2351,14 +2672,18 @@ function drawTideChart(times, heights, canvas, extremes, nowIdx) {
     const frac = (extMs - startMs) / (endMs - startMs);
     const x = pad.left + frac * cW;
     const y = yAt(extH);
+    const r = Math.max(2, Math.round(3 * scale));
     ctx.fillStyle = isHW ? '#2ec4b6' : '#e63946';
-    ctx.beginPath(); ctx.arc(x, y, 3, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); ctx.fill();
     const timeStr = new Date(extMs).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false });
     const lbl1 = (isHW ? 'HW ' : 'LW ') + extH.toFixed(2) + 'm';
-    ctx.font = '11px monospace';
+    ctx.font = `${fs}px monospace`;
     ctx.textAlign = 'center';
-    if (isHW) { ctx.fillText(lbl1, x, y - 14); ctx.fillText(timeStr, x, y - 4); }
-    else       { ctx.fillText(lbl1, x, y + 12); ctx.fillText(timeStr, x, y + 22); }
+    // Clamp label x so text never overflows canvas left/right edges
+    const halfMax = Math.max(ctx.measureText(lbl1).width, ctx.measureText(timeStr).width) / 2;
+    const safeX = Math.max(pad.left + halfMax, Math.min(pad.left + cW - halfMax, x));
+    if (isHW) { ctx.fillText(lbl1, safeX, y - Math.round(14*scale)); ctx.fillText(timeStr, safeX, y - Math.round(4*scale)); }
+    else       { ctx.fillText(lbl1, safeX, y + Math.round(12*scale)); ctx.fillText(timeStr, safeX, y + Math.round(22*scale)); }
   };
 
   if (tideExts && tideExts.length > 0) {
@@ -2380,20 +2705,20 @@ function drawTideChart(times, heights, canvas, extremes, nowIdx) {
   // Time labels every 6 h (step-size agnostic)
   const labelEvery = Math.max(1, Math.round(6 * 3600 * 1000 / seriesStepMs));
   ctx.fillStyle = '#5a7080';
-  ctx.font = '11px monospace';
+  ctx.font = `${fs}px monospace`;
   ctx.textAlign = 'center';
   for (let i = 0; i < n; i += labelEvery) {
     const d = new Date(t[i]);
     ctx.fillText(d.toLocaleTimeString([], { hour:'2-digit', minute:'2-digit', hour12:false }),
-                 xAt(i), pad.top + cH + 10);
+                 xAt(i), pad.top + cH + Math.round(10 * scale));
     ctx.fillText(d.toLocaleDateString([], { day:'2-digit', month:'short' }),
-                 xAt(i), pad.top + cH + 20);
+                 xAt(i), pad.top + cH + Math.round(20 * scale));
   }
 
   // Y axis labels
   ctx.textAlign = 'right';
   ctx.fillStyle = '#5a7080';
-  ctx.font = '11px monospace';
+  ctx.font = `${fs}px monospace`;
   for (let i = 0; i <= 3; i++) {
     const v = vMin + (vRng / 3) * i;
     ctx.fillText(v.toFixed(1), pad.left - 4, yAt(v) + 3);
@@ -2489,7 +2814,7 @@ function updateMapLKP() {
   } catch(e) { /* incomplete input */ }
 }
 
-function updateMapPattern(lkpLat, lkpLon, datum, r, pat) {
+function updateMapPattern(lkpLat, lkpLon, datum, r, pat, patType, driftDir) {
   if (!_map) return;
 
   // Clear old calculation layers
@@ -2498,13 +2823,28 @@ function updateMapPattern(lkpLat, lkpLon, datum, r, pat) {
   if (_datumMarker) { _map.removeLayer(_datumMarker); _datumMarker = null; }
   if (_searchCircle) { _map.removeLayer(_searchCircle); _searchCircle = null; }
 
-  // Search area circle (r nm → metres)
+  // Search area circle (always shown)
   _searchCircle = L.circle([datum.lat, datum.lon], {
     radius: r * 1852,
     color: '#f77f00', weight: 1.5,
     fillColor: '#f77f00', fillOpacity: 0.08
   }).addTo(_map);
   _patternLayers.push(_searchCircle);
+
+  // For square-pattern types, also draw the dotted bounding square
+  const squarePatterns = ['parallel', 'expanding', 'creeping'];
+  if (squarePatterns.includes(patType)) {
+    const d = r * Math.sqrt(2);
+    const corners = [45, -45, -135, 135].map(offset => {
+      const pt = destinationPoint(datum.lat, datum.lon, (driftDir + offset + 360) % 360, d);
+      return [pt.lat, pt.lon];
+    });
+    corners.push(corners[0]);
+    const sq = L.polyline(corners, {
+      color: '#f77f00', weight: 1.5, opacity: 0.8, dashArray: '6 6'
+    }).addTo(_map);
+    _patternLayers.push(sq);
+  }
 
   // Pattern route
   const coords = pat.waypoints.map(wp => [wp.lat, wp.lon]);
@@ -2529,7 +2869,8 @@ function updateMapPattern(lkpLat, lkpLon, datum, r, pat) {
 document.addEventListener('DOMContentLoaded', () => {
   showDisclaimer();
   initMap();
-  // Redraw tide chart if the panel is resized (e.g. window resize)
+
+  // Redraw tide chart when its container resizes
   const wrap = document.getElementById('tideChart')?.parentElement;
   if (wrap && window.ResizeObserver) {
     new ResizeObserver(() => {
@@ -2539,6 +2880,15 @@ document.addEventListener('DOMContentLoaded', () => {
       }
     }).observe(wrap);
   }
+
+  // Invalidate Leaflet map size on window resize (required after layout changes)
+  let _resizeTimer;
+  window.addEventListener('resize', () => {
+    clearTimeout(_resizeTimer);
+    _resizeTimer = setTimeout(() => {
+      if (_map) _map.invalidateSize();
+    }, 150);
+  });
 });
 
 // ═══════════════════════════════════════════════════════════
