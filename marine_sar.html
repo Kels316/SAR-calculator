@@ -2036,7 +2036,7 @@ function drawTideChart(times, heights, canvas) {
   const ctx = canvas.getContext('2d');
   ctx.scale(dpr, dpr);
 
-  const pad = { top: 26, right: 10, bottom: 26, left: 34 };
+  const pad = { top: 32, right: 10, bottom: 26, left: 34 };
   const cW = W - pad.left - pad.right;
   const cH = H - pad.top - pad.bottom;
 
@@ -2120,10 +2120,18 @@ function drawTideChart(times, heights, canvas) {
     const x = xAt(i), y = yAt(v48[i]);
     ctx.fillStyle = isHW ? '#2ec4b6' : '#e63946';
     ctx.beginPath(); ctx.arc(x, y, 3, 0, Math.PI * 2); ctx.fill();
-    const lbl = (isHW ? 'HW ' : 'LW ') + v48[i].toFixed(2) + 'm';
+    const timeStr = new Date(t48[i]).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false });
+    const lbl1 = (isHW ? 'HW ' : 'LW ') + v48[i].toFixed(2) + 'm';
+    const lbl2 = timeStr;
     ctx.font = '11px monospace';
     ctx.textAlign = 'center';
-    ctx.fillText(lbl, x, isHW ? y - 6 : y + 12);
+    if (isHW) {
+      ctx.fillText(lbl1, x, y - 14);
+      ctx.fillText(lbl2, x, y - 4);
+    } else {
+      ctx.fillText(lbl1, x, y + 12);
+      ctx.fillText(lbl2, x, y + 22);
+    }
   }
 
   // Time labels every 12 h
