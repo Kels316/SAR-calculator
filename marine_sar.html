@@ -1904,10 +1904,7 @@ async function fetchTideData(lat, lon) {
   } catch (e) { console.warn('Open-Meteo fetch failed:', e.message); }
   if (omRaw.length < 10) throw new Error('Open-Meteo: insufficient data');
 
-  // ── 4. Height-only calibration using all BOM future extremes ─────────────────────
-  // Interpolate raw OM at each BOM extreme timestamp, measure difference, average.
-  // Height-only: timezone=UTC already corrects the main timing issue; applying a
-  // mean time shift to past OM would incorrectly drop points near nowMs.
+  // ── 4. Calibrate OM against BOM future extremes (height + time) ─────────────────
   function omRawInterp(ms) {
     const idx = omRaw.findIndex(p => p.ms >= ms);
     if (idx <= 0) return omRaw[0].h;
@@ -1915,13 +1912,32 @@ async function fetchTideData(lat, lon) {
     const p0 = omRaw[idx - 1], p1 = omRaw[idx];
     return p0.h + (ms - p0.ms) / (p1.ms - p0.ms) * (p1.h - p0.h);
   }
-  const hOffsets = bomFuture.map(e => e.h - omRawInterp(e.t)).filter(isFinite);
+
+  // Time calibration: for each BOM future extreme, find the OM peak/trough in a
+  // ±3 h window. The mean (BOM_time − OM_peak_time) is the timing lag to correct.
+  const timeOffsets = [];
+  for (const bom of bomFuture.slice(0, 3)) {
+    const win = 3 * 3600000, step = 10 * 60000;
+    let bestT = bom.t, bestH = omRawInterp(bom.t);
+    for (let t = bom.t - win; t <= bom.t + win; t += step) {
+      const h = omRawInterp(t);
+      if (bom.isHW && h > bestH) { bestH = h; bestT = t; }
+      if (!bom.isHW && h < bestH) { bestH = h; bestT = t; }
+    }
+    timeOffsets.push(bom.t - bestT);
+  }
+  // Round to nearest 5 min to avoid jitter
+  const timeOffset = timeOffsets.length
+    ? Math.round(timeOffsets.reduce((a, b) => a + b, 0) / timeOffsets.length / (5 * 60000)) * (5 * 60000)
+    : 0;
+
+  // Height calibration using time-corrected OM (query raw OM at t − timeOffset)
+  const hOffsets = bomFuture.map(e => e.h - omRawInterp(e.t - timeOffset)).filter(isFinite);
   const heightOffset = hOffsets.length ? hOffsets.reduce((a, b) => a + b, 0) / hOffsets.length : 0;
 
-  // Calibrated OM — ALL points, height corrected, no time filter.
-  // nowMs only affects rendering colour (grey/teal), not the data.
+  // Apply both corrections to all OM points
   const calPts = omRaw
-    .map(p => ({ ms: p.ms, h: p.h + heightOffset, isBOM: false }));
+    .map(p => ({ ms: p.ms + timeOffset, h: p.h + heightOffset }));
 
   // ── 5. Past extremes from calibrated OM ──────────────────────────────────────────
   const rawPastExts = [];
