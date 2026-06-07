@@ -1307,9 +1307,10 @@ async function fetchLiveData() {
       `&wind_speed_unit=kn`;
 
     // Tide data fetched at nearest coastal bar (not LKP) — rescue teams deploy over the bar
+    // Fetch both sea_level_height_msl and wave_height; use tide if available, wave as fallback
     const barTideUrl = `https://marine-api.open-meteo.com/v1/marine` +
       `?latitude=${nearestBar.lat}&longitude=${nearestBar.lon}` +
-      `&hourly=sea_level_height_msl&forecast_days=3&cell_selection=nearest`;
+      `&hourly=sea_level_height_msl,wave_height&forecast_days=3&cell_selection=nearest`;
 
     const [marineResp, windResp, barTideResp] = await Promise.all([
       fetch(marineUrl),
@@ -1357,8 +1358,13 @@ async function fetchLiveData() {
     const wxCode     = wc.weather_code;              // WMO
 
     // Hourly tide heights from nearest coastal bar
-    const barTideTimes   = barTide.hourly?.time                 ?? [];
-    const barTideHeights = barTide.hourly?.sea_level_height_msl ?? [];
+    // Prefer sea_level_height_msl; fall back to wave_height if tidal data is unavailable
+    const barTideTimes = barTide.hourly?.time ?? [];
+    const rawTideH     = barTide.hourly?.sea_level_height_msl ?? [];
+    const rawWaveH     = barTide.hourly?.wave_height           ?? [];
+    const hasTideData  = rawTideH.some(v => v !== null && isFinite(v));
+    const barTideHeights  = hasTideData ? rawTideH : rawWaveH;
+    const barChartType    = hasTideData ? 'TIDE HEIGHT' : 'WAVE HEIGHT';
 
     // Auto-populate Step 2: Current
     setLiveField('current_speed', 'tag_current_speed', currentSpd, 2);
@@ -1422,7 +1428,7 @@ async function fetchLiveData() {
       waveH, waveDir, wavePeriod,
       swellH, swellDir, swellPeriod,
       airTemp, feelsLike, pressure, humidity, cloudCov, visibM, wxCode,
-      barTideTimes, barTideHeights, nearestBar.name, nearestBar.distNm,
+      barTideTimes, barTideHeights, nearestBar.name, nearestBar.distNm, barChartType,
       fetchedAt
     );
 
@@ -1876,7 +1882,7 @@ function updateWeatherPanel(
   waveH, waveDir, wavePeriod,
   swellH, swellDir, swellPeriod,
   airTemp, feelsLike, pressure, humidity, cloudCov, visibM, wxCode,
-  tideTimes, tideHeights, barName, barDistNm,
+  tideTimes, tideHeights, barName, barDistNm, barChartType,
   fetchTime
 ) {
   const n   = (v, dec, unit) => v !== null && v !== undefined && isFinite(v) ? `${v.toFixed(dec)}${unit}` : '—';
@@ -1911,28 +1917,35 @@ function updateWeatherPanel(
   document.getElementById('wxTime').textContent =
     fetchTime.toLocaleTimeString([], { hour:'2-digit', minute:'2-digit' }) + ' local';
 
-  // Bar label for tide chart
+  // Bar label for tide/wave chart
   const barLabel = document.getElementById('tideLocationLabel');
   if (barLabel && barName) {
-    barLabel.textContent = `${barName.toUpperCase()}  ·  ${Math.round(barDistNm)} nm from LKP`;
+    barLabel.textContent = `${barName.toUpperCase()} — ${barChartType || 'TIDE HEIGHT'}  ·  ${Math.round(barDistNm)} nm from LKP`;
     barLabel.style.display = '';
   }
 
   document.getElementById('wxPlaceholder').style.display = 'none';
   document.getElementById('wxContent').classList.add('visible');
 
-  // Draw tide chart on next frame so the panel has settled its layout
+  // Draw chart after layout settles — setTimeout is more reliable than rAF
+  // when switching from display:none to display:flex
   if (tideTimes.length > 0) {
-    requestAnimationFrame(() => {
+    const tryDraw = (attempt) => {
       const canvas = document.getElementById('tideChart');
-      if (canvas && canvas.offsetWidth > 0 && canvas.offsetHeight > 0) {
+      if (!canvas) return;
+      if (canvas.offsetWidth > 0 && canvas.offsetHeight > 0) {
         drawTideChart(tideTimes, tideHeights, canvas);
+      } else if (attempt < 10) {
+        setTimeout(() => tryDraw(attempt + 1), 50);
       }
-    });
+    };
+    setTimeout(() => tryDraw(0), 80);
   }
 }
 
 function drawTideChart(times, heights, canvas) {
+  // Cache data on element for resize redraws
+  canvas._tideData = { times, heights };
   const W = canvas.offsetWidth;
   const H = canvas.offsetHeight;
   if (W < 10 || H < 10) return;
@@ -2134,7 +2147,19 @@ function updateMapPattern(lkpLat, lkpLon, datum, r, pat) {
   _map.fitBounds(bounds, { padding: [20, 20] });
 }
 
-document.addEventListener('DOMContentLoaded', initMap);
+document.addEventListener('DOMContentLoaded', () => {
+  initMap();
+  // Redraw tide chart if the panel is resized (e.g. window resize)
+  const wrap = document.getElementById('tideChart')?.parentElement;
+  if (wrap && window.ResizeObserver) {
+    new ResizeObserver(() => {
+      const canvas = document.getElementById('tideChart');
+      if (canvas && canvas._tideData) {
+        drawTideChart(canvas._tideData.times, canvas._tideData.heights, canvas);
+      }
+    }).observe(wrap);
+  }
+});
 
 // ═══════════════════════════════════════════════════════════
 // EXPORT — GPX & KML
