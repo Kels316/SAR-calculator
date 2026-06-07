@@ -1295,11 +1295,11 @@ async function fetchLiveData() {
     // Find nearest coastal bar for tide chart
     const nearestBar = findNearestBar(lat, lon);
 
-    // Parallel fetch: marine API (current, waves, SST, sea level) + forecast API (wind) + bar tides
+    // Parallel fetch: marine API (current, waves, SST) + forecast API (wind) + TideCheck (bar tides)
     const marineUrl = `https://marine-api.open-meteo.com/v1/marine?latitude=${lat}&longitude=${lon}` +
       `&current=ocean_current_velocity,ocean_current_direction,wave_height,wave_direction,` +
       `wave_period,swell_wave_height,swell_wave_direction,swell_wave_period,` +
-      `sea_surface_temperature,sea_level_height_msl` +
+      `sea_surface_temperature` +
       `&velocity_unit=knots&cell_selection=sea`;
 
     const windUrl = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}` +
@@ -1308,29 +1308,23 @@ async function fetchLiveData() {
       `cloud_cover,visibility,weather_code` +
       `&wind_speed_unit=kn`;
 
-    // Tide data fetched at nearest coastal bar (not LKP) — rescue teams deploy over the bar
-    // Fetch both sea_level_height_msl and wave_height; use tide if available, wave as fallback
-    const barTideUrl = `https://marine-api.open-meteo.com/v1/marine` +
-      `?latitude=${nearestBar.lat}&longitude=${nearestBar.lon}` +
-      `&hourly=sea_level_height_msl,wave_height&forecast_days=3&cell_selection=nearest`;
-
-    const [marineResp, windResp, barTideResp] = await Promise.all([
+    const [marineResp, windResp, tideResult] = await Promise.all([
       fetch(marineUrl),
       fetch(windUrl),
-      fetch(barTideUrl)
+      fetchTideCheckData(nearestBar.lat, nearestBar.lon).catch(e => {
+        console.warn('TideCheck fetch failed:', e.message);
+        return null;
+      })
     ]);
 
-    if (!marineResp.ok)  throw new Error(`Marine API: ${marineResp.status} ${marineResp.statusText}`);
-    if (!windResp.ok)    throw new Error(`Forecast API: ${windResp.status} ${windResp.statusText}`);
-    if (!barTideResp.ok) throw new Error(`Bar Tide API: ${barTideResp.status} ${barTideResp.statusText}`);
+    if (!marineResp.ok) throw new Error(`Marine API: ${marineResp.status} ${marineResp.statusText}`);
+    if (!windResp.ok)   throw new Error(`Forecast API: ${windResp.status} ${windResp.statusText}`);
 
-    const marine  = await marineResp.json();
-    const wind    = await windResp.json();
-    const barTide = await barTideResp.json();
+    const marine = await marineResp.json();
+    const wind   = await windResp.json();
 
-    if (marine.error)  throw new Error(`Marine API: ${marine.reason}`);
-    if (wind.error)    throw new Error(`Forecast API: ${wind.reason}`);
-    if (barTide.error) throw new Error(`Bar Tide API: ${barTide.reason}`);
+    if (marine.error) throw new Error(`Marine API: ${marine.reason}`);
+    if (wind.error)   throw new Error(`Forecast API: ${wind.reason}`);
 
     const mc = marine.current;
     const wc = wind.current;
@@ -1344,7 +1338,6 @@ async function fetchLiveData() {
     const swellDir    = mc.swell_wave_direction;      // °T, from
     const swellPeriod = mc.swell_wave_period;         // s
     const sst         = mc.sea_surface_temperature;   // °C
-    const seaLevel    = mc.sea_level_height_msl;      // m above MSL
 
     const windSpd    = wc.wind_speed_10m;            // knots
     const windFrom   = wc.wind_direction_10m;        // °T, from
@@ -1359,18 +1352,11 @@ async function fetchLiveData() {
     const visibM     = wc.visibility;                // metres
     const wxCode     = wc.weather_code;              // WMO
 
-    // Hourly tide heights from nearest coastal bar
-    console.log('[SAR] barTide raw response:', JSON.stringify(barTide).slice(0, 800));
-    const barTideTimes = barTide.hourly?.time ?? [];
-    const rawTideH     = barTide.hourly?.sea_level_height_msl ?? [];
-    const rawWaveH     = barTide.hourly?.wave_height           ?? [];
-    const hasTideData  = rawTideH.some(v => v !== null && isFinite(v));
-    const barTideHeights  = hasTideData ? rawTideH : rawWaveH;
-    const barChartType    = hasTideData ? 'TIDE HEIGHT' : 'WAVE HEIGHT';
-    console.log('[SAR] barTideTimes.length:', barTideTimes.length,
-                '| rawTideH sample:', rawTideH.slice(0,3),
-                '| rawWaveH sample:', rawWaveH.slice(0,3),
-                '| hasTideData:', hasTideData);
+    // Tide heights from TideCheck for the nearest coastal bar
+    const barTideTimes   = tideResult?.times   ?? [];
+    const barTideHeights = tideResult?.heights  ?? [];
+    const tideStationName = tideResult?.stationName ?? nearestBar.name;
+    const barChartType   = 'Tide Height';
 
     // Auto-populate Step 2: Current
     setLiveField('current_speed', 'tag_current_speed', currentSpd, 2);
@@ -1390,9 +1376,6 @@ async function fetchLiveData() {
                     ' ' + fetchedAt.toLocaleDateString([], { day:'2-digit', month:'short' });
     document.getElementById('liveTime').textContent = timeStr + ' (local)';
 
-    const seaLevelStr = seaLevel !== null
-      ? (seaLevel >= 0 ? `+${seaLevel.toFixed(2)}` : seaLevel.toFixed(2)) + ' m'
-      : 'N/A';
     const sstStr      = sst !== null ? `${sst.toFixed(1)} °C` : 'N/A';
     const waveHStr    = waveH !== null ? `${waveH.toFixed(1)} m` : 'N/A';
     const waveDirStr  = waveDir !== null ? `from ${Math.round(waveDir)}°T` : '';
@@ -1423,8 +1406,8 @@ async function fetchLiveData() {
         <div class="live-kv-value muted">${sstStr}</div>
       </div>
       <div class="live-kv">
-        <div class="live-kv-label">Sea Level (MSL)</div>
-        <div class="live-kv-value muted">${seaLevelStr}</div>
+        <div class="live-kv-label">Tide Station</div>
+        <div class="live-kv-value muted">${tideResult ? tideStationName : 'No data'}</div>
       </div>
     `;
 
@@ -1434,7 +1417,7 @@ async function fetchLiveData() {
       waveH, waveDir, wavePeriod,
       swellH, swellDir, swellPeriod,
       airTemp, feelsLike, pressure, humidity, cloudCov, visibM, wxCode,
-      barTideTimes, barTideHeights, nearestBar.name, nearestBar.distNm, barChartType,
+      barTideTimes, barTideHeights, tideStationName, nearestBar.distNm, barChartType,
       fetchedAt
     );
 
@@ -1796,6 +1779,79 @@ function copySummary() {
 }
 
 // ═══════════════════════════════════════════════════════════
+// ── TIDECHECK API ──────────────────────────────────────────
+const TIDECHECK_KEY = 'tc_live_3110669925c9fa4a8714d768d358ade0';
+
+/**
+ * Fetch tide extremes from TideCheck for the nearest station to (lat, lon),
+ * then cosine-interpolate to an hourly series spanning 48 h from now.
+ * Returns { times: ISO[], heights: number[], stationName: string }
+ */
+async function fetchTideCheckData(lat, lon) {
+  const headers = { 'X-API-Key': TIDECHECK_KEY };
+
+  // 1. Find nearest station
+  const nearestResp = await fetch(
+    `https://tidecheck.com/api/stations/nearest?lat=${lat}&lng=${lon}`,
+    { headers }
+  );
+  if (!nearestResp.ok) throw new Error(`TideCheck nearest: ${nearestResp.status}`);
+  const nearestData = await nearestResp.json();
+  // Response is an array of stations sorted by distance
+  const station = Array.isArray(nearestData) ? nearestData[0] : nearestData;
+  const stationId   = station.id   ?? station.stationId;
+  const stationName = station.name ?? station.stationName ?? 'Unknown';
+
+  // 2. Fetch extremes — 3 days to ensure we cover 48 h ahead
+  const tidesResp = await fetch(
+    `https://tidecheck.com/api/station/${stationId}/tides?days=3&datum=LAT`,
+    { headers }
+  );
+  if (!tidesResp.ok) throw new Error(`TideCheck tides: ${tidesResp.status}`);
+  const tidesData = await tidesResp.json();
+  const extremes = tidesData.extremes ?? tidesData;
+  if (!Array.isArray(extremes) || extremes.length < 2) {
+    throw new Error('TideCheck: insufficient extreme data');
+  }
+
+  // 3. Cosine-interpolate hourly heights for 48 h from now
+  // Sort extremes by time ascending
+  const exts = extremes
+    .map(e => ({ t: new Date(e.time).getTime(), h: e.height }))
+    .sort((a, b) => a.t - b.t);
+
+  const startMs = Date.now();
+  const endMs   = startMs + 48 * 3600 * 1000;
+  const times   = [];
+  const heights = [];
+
+  for (let ms = startMs; ms <= endMs; ms += 3600 * 1000) {
+    times.push(new Date(ms).toISOString());
+
+    // Find the surrounding pair of extremes
+    let lo = null, hi = null;
+    for (let i = 0; i < exts.length - 1; i++) {
+      if (exts[i].t <= ms && ms <= exts[i + 1].t) {
+        lo = exts[i]; hi = exts[i + 1]; break;
+      }
+    }
+
+    if (lo && hi) {
+      // Cosine interpolation: h = midpoint + amplitude * cos(π * frac)
+      const frac = (ms - lo.t) / (hi.t - lo.t);
+      heights.push((lo.h + hi.h) / 2 + (lo.h - hi.h) / 2 * Math.cos(Math.PI * frac));
+    } else if (ms < exts[0].t) {
+      // Before first extreme — extrapolate flat
+      heights.push(exts[0].h);
+    } else {
+      // After last extreme — extrapolate flat
+      heights.push(exts[exts.length - 1].h);
+    }
+  }
+
+  return { times, heights, stationName };
+}
+
 // COASTAL BAR DATABASE — nearest bar drives the tide chart
 // ═══════════════════════════════════════════════════════════
 const COASTAL_BARS = [
