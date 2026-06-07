@@ -586,8 +586,7 @@
     gap: 10px;
     height: 100%;
     padding: 24px 16px 24px 0;
-    overflow-y: auto;
-    overflow-x: hidden;
+    overflow: hidden;
     order: 1;   /* renders after results-content in DOM but visually on right */
   }
 
@@ -813,8 +812,8 @@
     header h1 { font-size: 18px; letter-spacing: 1px; }
     .header-sub { display: none; }
 
-    /* Page-scroll layout: remove fixed app height so body scrolls.
-       Inputs panel becomes sticky so the form stays in view. */
+    /* Switch to page-scroll at tablet width: remove fixed app height,
+       let body scroll. Inputs panel sticks so the form stays in view. */
     .app {
       grid-template-columns: 260px 1fr;
       height: auto;
@@ -826,13 +825,8 @@
       height: calc(100dvh - 54px);
       overflow-y: auto;
     }
-    /* Results and right column: auto height, part of page scroll */
     .results-panel { height: auto; overflow: visible; }
-    .right-column {
-      padding: 12px 8px 12px 0;
-      height: auto;
-      overflow: visible;
-    }
+    .right-column  { height: auto; overflow: visible; }
 
     .step-header { padding: 9px 14px; }
     .step-body { padding: 4px 14px 12px; }
