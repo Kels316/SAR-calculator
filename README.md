@@ -22,6 +22,7 @@ A browser-based Search and Rescue planning tool based on the Australian National
 - **Live weather panel** — displays wave height/period/direction, swell, wind, air temperature, pressure, humidity, visibility, and sea surface temperature at the LKP
 - **Tide chart** — real tidal height predictions for the nearest coastal bar to the LKP; past tidal curve from calibrated Open-Meteo data, future from BOM official HW/LW predictions via [austides](https://austides.vercel.app), joined by a cubic spline for a smooth continuous curve
 - **Interactive map** — tap to place a draggable LKP pin, or type coordinates; map shows LKP, search area circle, dotted bounding square (oriented to pattern direction), and calculated search pattern
+- **Responsive layout** — works on desktop and tablet; portrait tablet (≤768px) stacks panels into a single scrollable column so the tide chart is always reachable
 - **Waypoint export** — GPX and KML export for upload to Google Earth or GPS devices
 - **Print / Save PDF** — generates a clean monospace SAR plan summary (incident, drift, datum, search parameters, live conditions, tide HW/LW, waypoints) and opens the browser print dialog
 - **Copy Summary** — copies the full SAR plan text to the clipboard, including live marine conditions and tide extremes if data has been fetched

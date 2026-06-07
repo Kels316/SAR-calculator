@@ -818,9 +818,9 @@
     .step-body { padding: 4px 14px 12px; }
 
     .results-content { padding: 12px 14px; }
-    .right-column { padding: 12px 8px 12px 0; }
+    .right-column { padding: 12px 8px 12px 0; overflow-y: auto; }
     .map-inset { flex: 0 0 22vh; min-height: 130px; }
-    .tide-panel { min-height: 120px; }
+    .tide-panel { min-height: 150px; }
   }
 
   /* ── Tablet portrait and below: single-column stacked layout ── */
@@ -861,18 +861,21 @@
       order: 1;  /* results below map on mobile */
     }
 
-    /* Right column: full width block, fixed height, above results */
+    /* Right column: full width, auto height — stacks above results and scrolls with page */
     .right-column {
       flex: 0 0 auto;
       width: 100%;
-      height: 480px;
+      height: auto;
+      overflow: visible;
       padding: 12px 14px;
       order: 0;
     }
 
-    .map-inset { flex: 0 0 200px; }
-    .tide-panel { min-height: 160px; flex: 1; }
+    .map-inset    { flex: 0 0 auto; height: 200px; }
     .weather-panel { flex: 0 0 auto; }
+    /* Give tide panel an explicit height so the absolutely-positioned canvas renders */
+    .tide-panel   { flex: 0 0 auto; height: 220px; min-height: 220px; }
+    .tide-chart-wrap { min-height: 180px; }
 
     /* 3-col result grids → 2-col */
     .result-grid.cols3 { grid-template-columns: 1fr 1fr; }
