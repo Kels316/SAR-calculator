@@ -805,8 +805,8 @@
     .map-inset { flex: 0 0 26vh; }
   }
 
-  /* ── Tablet landscape / ~1024px ── */
-  @media (max-width: 1024px) {
+  /* ── Tablet landscape / ~1366px ── */
+  @media (max-width: 1366px) {
     header { padding: 8px 16px; }
     .logo { width: 34px; height: 34px; }
     header h1 { font-size: 18px; letter-spacing: 1px; }
@@ -2824,7 +2824,7 @@ function initMap() {
   // is below the map. Disable drag/zoom handlers on narrow viewports so
   // touch scrolling passes through to the browser. Tap-to-set-LKP still works.
   function applyMobileDrag() {
-    if (window.innerWidth <= 1024) {
+    if (window.innerWidth <= 1366) {
       _map.dragging.disable();
       _map.touchZoom.disable();
       _map.doubleClickZoom.disable();
