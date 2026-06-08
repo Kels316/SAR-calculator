@@ -2629,8 +2629,23 @@ function drawTideChart(times, heights, canvas, extremes, nowIdx) {
     // Clamp label x so text never overflows canvas left/right edges
     const halfMax = Math.max(ctx.measureText(lbl1).width, ctx.measureText(timeStr).width) / 2;
     const safeX = Math.max(pad.left + halfMax, Math.min(pad.left + cW - halfMax, x));
-    if (isHW) { ctx.fillText(lbl1, safeX, y - Math.round(14*scale)); ctx.fillText(timeStr, safeX, y - Math.round(4*scale)); }
-    else       { ctx.fillText(lbl1, safeX, y + Math.round(12*scale)); ctx.fillText(timeStr, safeX, y + Math.round(22*scale)); }
+    const lineH = Math.round(11 * scale);
+    const bgPad = Math.round(2 * scale);
+    const lblW  = Math.max(ctx.measureText(lbl1).width, ctx.measureText(timeStr).width) + bgPad * 2;
+    // Draw black background pill then white text for both lines
+    const drawLabelPair = (topY) => {
+      const bgH = lineH * 2 + bgPad * 3;
+      ctx.fillStyle = 'rgba(0,0,0,0.72)';
+      ctx.beginPath();
+      const r2 = Math.round(3 * scale);
+      ctx.roundRect(safeX - lblW / 2, topY - bgPad, lblW, bgH, r2);
+      ctx.fill();
+      ctx.fillStyle = '#ffffff';
+      ctx.fillText(lbl1,    safeX, topY + lineH * 0.8);
+      ctx.fillText(timeStr, safeX, topY + lineH * 0.8 + lineH + bgPad);
+    };
+    if (isHW) drawLabelPair(y - Math.round(26 * scale));
+    else       drawLabelPair(y + Math.round(6  * scale));
   };
 
   if (tideExts && tideExts.length > 0) {
