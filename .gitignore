@@ -1,0 +1,5 @@
+node_modules/
+*.log
+__pycache__/
+*.pyc
+All_data_2026_aus*.pdf

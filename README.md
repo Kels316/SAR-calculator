@@ -20,7 +20,7 @@ A browser-based Search and Rescue planning tool based on the Australian National
   - Track Line Search — along a known vessel route
 - **Live marine data** — fetches current ocean conditions from [Open-Meteo](https://open-meteo.com) and auto-populates current, wind, and weather factor inputs
 - **Live weather panel** — displays wave height/period/direction, swell, wind, air temperature, pressure, humidity, visibility, and sea surface temperature at the LKP
-- **Tide chart** — real tidal height predictions for the nearest coastal bar to the LKP; past tidal curve from calibrated Open-Meteo data, future from BOM official HW/LW predictions via [austides](https://austides.vercel.app), joined by a cubic spline for a smooth continuous curve
+- **Tide chart** — official tidal predictions for the nearest coastal bar to the LKP, drawn from a local database built directly from the Australian National Tide Tables (ANTT) 2026
 - **Interactive map** — tap to place a draggable LKP pin, or type coordinates; map shows LKP, search area circle, dotted bounding square (oriented to pattern direction), and calculated search pattern
 - **Responsive layout** — works on desktop and tablet; portrait tablet (≤768px) stacks panels into a single scrollable column so the tide chart is always reachable
 - **Waypoint export** — GPX and KML export for upload to Google Earth or GPS devices
@@ -42,12 +42,40 @@ Enter LKP coordinates and click **Fetch Live Marine Data** to pull current condi
 | Air temperature, pressure, humidity | Open-Meteo Forecast API |
 | Sea surface temperature | Open-Meteo Marine API |
 | Weather factor (Wf) | Derived from significant wave height |
-| Tide chart — past curve | Open-Meteo Marine API (calibrated against BOM extremes) |
-| Tide chart — future curve | BOM official HW/LW predictions via austides proxy |
+| Tide predictions | ANTT 2026 — Australian Hydrographic Office (local DB) |
 
 Fields auto-populated from live data are highlighted in green. Editing any field manually removes the green highlight.
 
 Ocean currents are modelled at ~8 km resolution — accuracy is limited in coastal areas and this data supplements but does not replace nautical almanac data or on-scene observations.
+
+---
+
+## Tide Database
+
+Tide predictions are served from `tide-db.js`, a pre-built database parsed directly from the **Australian National Tide Tables (ANTT) 2026**, published by the Australian Hydrographic Office.
+
+**640 stations** across Australia — 79 primary ports and 561 secondary ports.
+
+**Primary ports** — HW/LW times and heights are read directly from the ANTT predicted tide tables (Chapter 3).
+
+**Secondary ports** — calculated from the nearest standard port using the official ANTT method (AHP11):
+
+```
+secondary_height = (std_height − std_MSL) × range_ratio + sec_MSL
+```
+
+where `range_ratio = (sec_MHWS − sec_MLWS) / (std_MHWS − std_MLWS)`, and time is adjusted by the mean time difference — both sourced from the ANTT secondary port datum tables (Chapter 4).
+
+The database is rebuilt annually by running `build_tide_db.py` against the new ANTT PDF. A GitHub Actions workflow (`refresh-tide-db.yml`) automates this each January.
+
+### Rebuilding the DB
+
+```bash
+pip install pypdf
+python3 build_tide_db.py /path/to/ANTT_2026.pdf
+```
+
+The script writes `tide-db.js` to the same directory. Drop the new PDF alongside the script and re-run for each new year's tables.
 
 ---
 
@@ -56,10 +84,9 @@ Ocean currents are modelled at ~8 km resolution — accuracy is limited in coast
 The calculator includes 39 Australian coastal bar locations across QLD, NSW, VIC, SA, WA, and NT. When live data is fetched, the nearest bar to the LKP is identified and its tidal predictions are displayed — relevant to rescue crews who must cross the bar to reach the search area.
 
 The tide chart shows:
-- **Grey curve** — calibrated past tidal heights (Open-Meteo, height-corrected against BOM official extremes)
-- **Teal curve** — future tidal predictions from BOM official HW/LW data
-- **Labels** — 2 past and 4 future HW/LW extremes with time (browser local timezone) and height in metres; duplicates near the past/future boundary are automatically removed
-- **Now line** — current time marker; has no effect on the curve itself
+- **Teal curve** — tidal predictions from the ANTT 2026 database
+- **Labels** — upcoming HW/LW extremes with time (browser local timezone) and height in metres
+- **Now line** — current time marker
 
 ---
 
@@ -81,6 +108,9 @@ Open `marine_sar.html` in any modern browser — no server or installation requi
 |---|---|
 | `marine_sar.html` | Main calculator — open this in a browser |
 | `index.html` | Redirects to `marine_sar.html` |
+| `tide-db.js` | Pre-built tide database (640 stations, ANTT 2026) |
+| `build_tide_db.py` | Rebuilds `tide-db.js` from an ANTT PDF |
+| `check-tides.mjs` | CLI tool to inspect tide DB entries for a named bar |
 
 ---
 
@@ -91,5 +121,6 @@ Open `marine_sar.html` in any modern browser — no server or installation requi
   - Table 4-3 — Number of search legs and total track distance for Expanding Square by radius and track spacing
   - Figure D-5:13 — Marine Probability of Detection curves (First through Fifth search)
 - IAMSAR Manual Vol. II — Mission Co-ordination
+- Australian National Tide Tables 2026, Australian Hydrographic Office (AHO) — [hydro.gov.au](https://www.hydro.gov.au)
+  - AHP11 — Secondary port calculation method
 - Open-Meteo Marine & Forecast APIs — [docs](https://open-meteo.com/en/docs/marine-weather-api)
-- austides BOM tide proxy — [austides.vercel.app](https://austides.vercel.app)
