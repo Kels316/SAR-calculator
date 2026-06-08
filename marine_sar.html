@@ -645,7 +645,7 @@
   .wx-content.visible { display: flex; }
   .wx-metrics {
     display: grid;
-    grid-template-columns: repeat(2, 1fr);
+    grid-template-columns: repeat(3, 1fr);
     border-bottom: 1px solid var(--border);
   }
   .wx-metric {
@@ -653,10 +653,10 @@
     border-right: 1px solid var(--border);
     border-bottom: 1px solid var(--border);
   }
-  .wx-metric:nth-child(even) { border-right: none; }
+  .wx-metric:nth-child(3n) { border-right: none; }
   .wx-metric-label {
     font-family: var(--mono);
-    font-size: 11px;
+    font-size: 10px;
     color: var(--muted);
     text-transform: uppercase;
     letter-spacing: 0.5px;
@@ -664,12 +664,12 @@
   }
   .wx-metric-value {
     font-family: var(--mono);
-    font-size: 14px;
+    font-size: 13px;
     color: var(--text);
   }
   .wx-metric-sub {
     font-family: var(--mono);
-    font-size: 12px;
+    font-size: 11px;
     color: var(--muted);
     margin-top: 1px;
   }
@@ -1432,16 +1432,18 @@ function parseLatLon(raw) {
 // LIVE DATA — OPEN-METEO
 // ═══════════════════════════════════════════════════════════
 
-// Map significant wave height (m) → Beaufort sea state label and Wf suggestion
+// Map significant wave height (m) → Douglas sea state label and Wf suggestion
 function waveHeightToSeaState(h) {
-  if (h === null || h === undefined) return { label: 'Unknown', wf: 0.9 };
-  if (h < 0.1)  return { label: 'Sea 0 — Calm (glassy)',        wf: 1.00 };
-  if (h < 0.5)  return { label: 'Sea 1-2 — Calm/Smooth',        wf: 1.00 };
-  if (h < 1.25) return { label: 'Sea 3 — Slight',               wf: 0.95 };
-  if (h < 2.5)  return { label: 'Sea 4-5 — Moderate/Rough',     wf: 0.85 };
-  if (h < 4.0)  return { label: 'Sea 6-7 — Very rough/High',    wf: 0.70 };
-  if (h < 6.0)  return { label: 'Sea 8 — Very High',            wf: 0.45 };
-  return             { label: 'Sea 9 — Phenomenal',              wf: 0.30 };
+  if (h === null || h === undefined) return { label: 'Unknown',                  wf: 0.9  };
+  if (h <  0.1)  return { label: 'Sea 0 — Calm (glassy)',                        wf: 1.00 };
+  if (h <  0.5)  return { label: 'Sea 1–2 — Calm / Smooth',                      wf: 1.00 };
+  if (h <  1.25) return { label: 'Sea 3 — Slight',                               wf: 0.95 };
+  if (h <  2.5)  return { label: 'Sea 4 — Moderate',                             wf: 0.85 };
+  if (h <  4.0)  return { label: 'Sea 5 — Rough',                                wf: 0.70 };
+  if (h <  6.0)  return { label: 'Sea 6 — Very Rough',                           wf: 0.55 };
+  if (h <  9.0)  return { label: 'Sea 7 — High',                                 wf: 0.40 };
+  if (h < 14.0)  return { label: 'Sea 8 — Very High',                            wf: 0.25 };
+  return              { label: 'Sea 9 — Phenomenal',                             wf: 0.10 };
 }
 
 function setLiveField(inputId, tagId, value, decimals = 1) {
@@ -1476,6 +1478,98 @@ function toggleDisclaimer() {
   document.getElementById('disclaimerToggle').textContent =
     disclaimerOpen ? '⚠ Data accuracy notice ▼' : '⚠ Data accuracy notice ▶';
 }
+
+// ── BOM marine warnings ────────────────────────────────────────────────────
+// Uses the public BOM Weather API (no key required).
+// Returns array of { title, type } objects, or null on failure.
+// Encode lat/lon to a geohash string (BOM uses precision 4)
+function encodeGeohash(lat, lon, precision = 4) {
+  const BASE32 = '0123456789bcdefghjkmnpqrstuvwxyz';
+  let idx = 0, bit = 0, evenBit = true, geohash = '';
+  let minLat = -90, maxLat = 90, minLon = -180, maxLon = 180;
+  while (geohash.length < precision) {
+    if (evenBit) {
+      const mid = (minLon + maxLon) / 2;
+      if (lon >= mid) { idx = idx * 2 + 1; minLon = mid; }
+      else            { idx = idx * 2;     maxLon = mid; }
+    } else {
+      const mid = (minLat + maxLat) / 2;
+      if (lat >= mid) { idx = idx * 2 + 1; minLat = mid; }
+      else            { idx = idx * 2;     maxLat = mid; }
+    }
+    evenBit = !evenBit;
+    if (++bit === 5) { geohash += BASE32[idx]; bit = 0; idx = 0; }
+  }
+  return geohash;
+}
+
+// Parse GMDSS severity level from BOM warning message HTML.
+// Returns 'hurricane force' | 'storm force' | 'gale' | 'strong wind' | null
+function parseBOMSeverity(html) {
+  if (!html) return null;
+  const div = document.createElement('div');
+  div.innerHTML = html;
+  const order = ['hurricane force', 'storm force', 'gale', 'strong wind'];
+  let highest = null;
+  for (const b of div.querySelectorAll('b')) {
+    const text = b.textContent.toLowerCase();
+    for (const sev of order) {
+      if (text.includes(sev)) {
+        const idx = order.indexOf(sev);
+        if (highest === null || idx < order.indexOf(highest)) highest = sev;
+        break;
+      }
+    }
+  }
+  return highest;
+}
+
+async function fetchBOMWarnings(lat, lon) {
+  try {
+    const geohash = encodeGeohash(lat, lon, 6);
+    const warnResp = await fetch(
+      `https://api.weather.bom.gov.au/v1/locations/${geohash}/warnings`,
+      { headers: { 'Accept': 'application/json' } }
+    );
+    if (!warnResp.ok) return null;
+    const warnData = await warnResp.json();
+    const list = warnData?.data ?? [];
+
+    // Fetch full warning details in parallel to get severity from message HTML
+    return await Promise.all(list.map(async w => {
+      let severity = w.warning_group_type ?? '';
+      let messageText = '';
+      try {
+        const det = await fetch(
+          `https://api.weather.bom.gov.au/v1/warnings/${w.id}`,
+          { headers: { 'Accept': 'application/json' } }
+        );
+        if (det.ok) {
+          const detData = await det.json();
+          const msg = detData?.data?.message ?? detData?.data?.[0]?.message ?? '';
+          const parsed = parseBOMSeverity(msg);
+          if (parsed) severity = parsed;
+          // Extract plain text from HTML for summary
+          if (msg) {
+            const tmp = document.createElement('div');
+            tmp.innerHTML = msg;
+            messageText = (tmp.textContent || tmp.innerText || '').replace(/\s+/g, ' ').trim();
+          }
+        }
+      } catch (_) {}
+      return {
+        short_title:  w.short_title ?? w.title ?? 'Warning',
+        type:         w.type ?? '',
+        severity,
+        messageText,
+      };
+    }));
+  } catch (e) {
+    console.warn('[BOM] warnings fetch failed:', e.message);
+    return null;
+  }
+}
+
 
 async function fetchLiveData() {
   // Parse LKP first
@@ -1513,13 +1607,14 @@ async function fetchLiveData() {
       `cloud_cover,visibility,weather_code` +
       `&wind_speed_unit=kn`;
 
-    const [marineResp, windResp, tideResult] = await Promise.all([
+    const [marineResp, windResp, tideResult, bomWarnings] = await Promise.all([
       fetch(marineUrl),
       fetch(windUrl),
-      fetchTideData(nearestBar.lat, nearestBar.lon, nearestBar.name).catch(e => {
+      fetchTideData(nearestBar.lat, nearestBar.lon, nearestBar.name, nearestBar.stationId).catch(e => {
         console.warn('austides fetch failed:', e.message);
         return { error: e.message };
-      })
+      }),
+      fetchBOMWarnings(lat, lon)
     ]);
 
     if (!marineResp.ok) throw new Error(`Marine API: ${marineResp.status} ${marineResp.statusText}`);
@@ -1565,6 +1660,10 @@ async function fetchLiveData() {
     const barTideExtremes = tideOk ? tideResult.extremes : null;
     const barTideNowIdx   = tideOk ? (tideResult.nowIdx ?? 0) : 0;
     const tideStationName = tideOk ? tideResult.stationName : nearestBar.name;
+    const tideStationType = (tideOk ? tideResult.stationType : null) || nearestBar.type; // 'primary'|'secondary'
+    const tideStationLabel = tideStationType
+      ? `${tideStationName} (${tideStationType === 'primary' ? 'Primary' : 'Secondary'})`
+      : tideStationName;
     const tideDbGenerated = tideResult?.dbGenerated ?? null;
     const tideDataSource  = tideDbGenerated
       ? `BOM · DB ${new Date(tideDbGenerated).toLocaleDateString('en-AU', { day:'numeric', month:'short', year:'numeric' })}`
@@ -1620,7 +1719,7 @@ async function fetchLiveData() {
       </div>
       <div class="live-kv">
         <div class="live-kv-label">Tide Station</div>
-        <div class="live-kv-value muted">${tideResult ? tideStationName : 'No data'}</div>
+        <div class="live-kv-value muted">${tideResult ? tideStationLabel : 'No data'}</div>
       </div>
     `;
 
@@ -1630,8 +1729,9 @@ async function fetchLiveData() {
       waveH, waveDir, wavePeriod,
       swellH, swellDir, swellPeriod,
       airTemp, feelsLike, pressure, humidity, cloudCov, visibM, wxCode,
-      barTideTimes, barTideHeights, tideStationName, nearestBar.distNm, barChartType,
-      fetchedAt, barTideExtremes, barTideNowIdx
+      barTideTimes, barTideHeights, tideStationLabel, nearestBar.distNm, barChartType,
+      fetchedAt, barTideExtremes, barTideNowIdx,
+      bomWarnings
     );
 
     lastLiveData = {
@@ -1641,8 +1741,9 @@ async function fetchLiveData() {
       waveH, waveDir, wavePeriod,
       swellH, swellDir, swellPeriod,
       sst, airTemp, feelsLike, pressure, humidity, visibM,
-      seaState, tideStationName,
+      seaState, tideStationName: tideStationLabel,
       tideExtremes: barTideExtremes,
+      bomWarnings,
     };
 
     document.getElementById('livePanel').classList.add('visible');
@@ -2129,6 +2230,41 @@ function buildSummary(d) {
                       ' ' + dt.toLocaleDateString([], { day: '2-digit', month: 'short' });
       return `  ${e.isHW ? 'HW' : 'LW'}            : ${e.h.toFixed(2)} m  ${timeStr}`;
     }) : []),
+    ...(ld.bomWarnings && ld.bomWarnings.length > 0 ? [
+      '',
+      '── BOM MARINE WARNINGS ──────────────',
+      ...ld.bomWarnings.map(w => {
+        const sevLabel = {
+          'strong wind':     'STRONG WIND WARNING',
+          'gale':            'GALE WARNING',
+          'storm force':     'STORM FORCE WARNING',
+          'hurricane force': 'HURRICANE FORCE WARNING',
+          'minor':           'MARINE WIND WARNING',
+          'major':           'MARINE WIND WARNING',
+        };
+        const level = sevLabel[w.severity] ?? (w.short_title ?? 'MARINE WARNING');
+        const lines = [`  [${level}]`];
+        if (w.messageText) {
+          // Word-wrap message at ~72 chars
+          const words = w.messageText.split(/\s+/);
+          let line = '  ';
+          for (const word of words) {
+            if (line.length + word.length + 1 > 74) {
+              lines.push(line.trimEnd());
+              line = '  ' + word + ' ';
+            } else {
+              line += word + ' ';
+            }
+          }
+          if (line.trim()) lines.push(line.trimEnd());
+        }
+        return lines.join('\n');
+      }),
+    ] : [
+      '',
+      '── BOM MARINE WARNINGS ──────────────',
+      '  None active',
+    ]),
     '',
   ] : [];
 
@@ -2225,25 +2361,30 @@ const TIDE_CACHE_TTL_MS = 4 * 3600 * 1000;
  * Reads from window.TIDE_DB (tide-db.js). Returns:
  *   { times: ISO[], heights: number[], nowIdx, stationName, extremes, dbGenerated }
  */
-async function fetchTideData(lat, lon, barName) {
-  const cacheKey = `${lat.toFixed(2)}_${lon.toFixed(2)}`;
+async function fetchTideData(lat, lon, barName, stationId) {
+  const cacheKey = stationId || `${lat.toFixed(2)}_${lon.toFixed(2)}`;
   const cached   = _tideCache[cacheKey];
   if (cached && (Date.now() - cached.fetchedAt) < TIDE_CACHE_TTL_MS) return cached.data;
 
   const db = window.TIDE_DB;
   if (!db) throw new Error('Tide DB not found — run: python3 build_tide_db.py');
 
-  // ── 1. Find station — use barToStation lookup, or nearest by distance ────────────
+  // ── 1. Find station — prefer explicit stationId, then barToStation, then distance ─
   const epochMs = db.epoch_ms || 0;   // 2026-01-01 00:00 UTC in ms (may be 0 for old DBs)
   let nearest = null;
 
-  // Prefer direct lookup via barToStation (exact match, no distance search needed)
-  if (barName && db.barToStation && db.barToStation[barName]) {
+  // Direct station ID lookup (fastest, most accurate)
+  if (stationId && db.stations[stationId]) {
+    nearest = { id: stationId, ...db.stations[stationId] };
+  }
+
+  // Fallback: barToStation name lookup
+  if (!nearest && barName && db.barToStation && db.barToStation[barName]) {
     const sid = db.barToStation[barName];
     if (db.stations[sid]) nearest = { id: sid, ...db.stations[sid] };
   }
 
-  // Fall back to nearest-station distance search
+  // Final fallback: nearest-station distance search
   if (!nearest) {
     let minD = Infinity;
     for (const [id, s] of Object.entries(db.stations)) {
@@ -2295,7 +2436,7 @@ async function fetchTideData(lat, lon, barName) {
     Math.abs(new Date(ts).getTime() - nowMs) <
     Math.abs(new Date(times[best]).getTime() - nowMs) ? i : best, 0);
 
-  const result = { times, heights, nowIdx, stationName: nearest.name, extremes, dbGenerated: db.generated };
+  const result = { times, heights, nowIdx, stationName: nearest.name, stationType: nearest.type, extremes, dbGenerated: db.generated };
   _tideCache[cacheKey] = { data: result, fetchedAt: Date.now() };
   return result;
 }
@@ -2365,6 +2506,28 @@ function haversineNm(lat1, lon1, lat2, lon2) {
 }
 
 function findNearestBar(lat, lon) {
+  // Search all stations in the DB (primary + secondary) for the closest one.
+  // Falls back to the hardcoded COASTAL_BARS list if the DB isn't loaded yet.
+  const db = window.TIDE_DB;
+  if (db && db.stations) {
+    let nearestId = null, nearestS = null, minDist = Infinity;
+    for (const [id, s] of Object.entries(db.stations)) {
+      if (s.lat == null || s.lon == null) continue;
+      const d = haversineNm(lat, lon, s.lat, s.lon);
+      if (d < minDist) { minDist = d; nearestId = id; nearestS = s; }
+    }
+    if (nearestS) {
+      return {
+        name:    nearestS.name,
+        lat:     nearestS.lat,
+        lon:     nearestS.lon,
+        stationId: nearestId,
+        type:    nearestS.type,   // 'primary' or 'secondary'
+        distNm:  Math.round(minDist)
+      };
+    }
+  }
+  // Fallback: hardcoded bars
   let nearest = COASTAL_BARS[0];
   let minDist = haversineNm(lat, lon, nearest.lat, nearest.lon);
   for (const bar of COASTAL_BARS.slice(1)) {
@@ -2399,7 +2562,8 @@ function updateWeatherPanel(
   swellH, swellDir, swellPeriod,
   airTemp, feelsLike, pressure, humidity, cloudCov, visibM, wxCode,
   tideTimes, tideHeights, barName, barDistNm, barChartType,
-  fetchTime, tideExtremes, tideNowIdx
+  fetchTime, tideExtremes, tideNowIdx,
+  warnings
 ) {
   const n   = (v, dec, unit) => v !== null && v !== undefined && isFinite(v) ? `${v.toFixed(dec)}${unit}` : '—';
   const deg = v => v !== null && v !== undefined && isFinite(v) ? `${Math.round(v)}°T` : '—';
@@ -2409,7 +2573,30 @@ function updateWeatherPanel(
 
   const windSub  = windGust !== null && windGust !== undefined ? `gust ${Math.round(windGust)} kn` : '';
   const waveSub  = wavePeriod !== null ? `${Math.round(wavePeriod)} s period` : '';
-  const swellSub = swellPeriod !== null ? `${Math.round(swellPeriod)} s period` : '';
+  const swellDesc = (() => {
+    if (swellH === null || swellPeriod === null) return '';
+    // Deep-water wavelength: L ≈ 1.56 × T²
+    const L = 1.56 * swellPeriod * swellPeriod;
+    const h = swellH, T = swellPeriod;
+    if (h < 2) {
+      if (T < 11) return 'Low swell, short/avg length';
+      return 'Long, low swell';
+    }
+    if (h < 4) {
+      if (L < 100)             return 'Short swell, moderate height';
+      if (T >= 8 && T < 11)    return 'Avg swell, moderate height';
+      if (T >= 11)             return 'Long swell, moderate height';
+      return 'Short swell, moderate height';
+    }
+    // h >= 4
+    if (L < 100)               return 'Short heavy swell';
+    if (T >= 8 && T < 11)      return 'Avg length heavy swell';
+    return 'Long heavy swell';
+  })();
+  const swellSub = [
+    swellPeriod !== null ? `${Math.round(swellPeriod)} s period` : '',
+    swellDesc
+  ].filter(Boolean).join(' · ');
 
   function cell(label, value, sub) {
     return `<div class="wx-metric">
@@ -2417,6 +2604,37 @@ function updateWeatherPanel(
       <div class="wx-metric-value">${value}</div>
       ${sub ? `<div class="wx-metric-sub">${sub}</div>` : ''}
     </div>`;
+  }
+
+  // 9th cell: BOM marine warnings
+  const sevColor = {
+    'strong wind':     '#f0a500',  // amber
+    'gale':            '#e07000',  // orange
+    'storm force':     '#d04000',  // dark orange/red
+    'hurricane force': '#c00000',  // red
+    // fallbacks for warning_group_type if detail fetch fails
+    'minor': '#f0a500',
+    'major': '#d04000',
+  };
+  let warnText = 'None active', warnColor = 'var(--muted)';
+  if (warnings !== null) {
+    const marine = (warnings ?? []).filter(w =>
+      /marine|coastal|wind|gale|storm|swell|sea|surf|flood|tsunami/i.test(
+        (w.title ?? '') + ' ' + (w.type ?? '')
+      )
+    );
+    if (marine.length > 0) {
+      const sevLabel = {
+        'strong wind':     'Strong Wind Warning',
+        'gale':            'Gale Warning',
+        'storm force':     'Storm Force Warning',
+        'hurricane force': 'Hurricane Force Warning',
+        'minor':           'Marine Wind Warning',
+        'major':           'Marine Wind Warning',
+      };
+      warnText  = marine.map(w => sevLabel[w.severity] ?? w.short_title ?? 'Marine Warning').join(' · ');
+      warnColor = sevColor[marine[0].severity] ?? 'var(--accent2)';
+    }
   }
 
   document.getElementById('wxMetrics').innerHTML =
@@ -2427,7 +2645,11 @@ function updateWeatherPanel(
     cell('Air Temp',     n(airTemp, 1, '°C'), `feels ${n(feelsLike, 1, '°C')}`) +
     cell('Pressure',     pressure !== null ? Math.round(pressure) + ' hPa' : '—', '') +
     cell('Humidity',     humidity !== null ? Math.round(humidity) + '%' : '—', '') +
-    cell('Cloud Cover',  cloudCov !== null ? Math.round(cloudCov) + '%' : '—', '');
+    cell('Cloud Cover',  cloudCov !== null ? Math.round(cloudCov) + '%' : '—', '') +
+    `<div class="wx-metric" style="border-right:none">
+      <div class="wx-metric-label">Warnings</div>
+      <div class="wx-metric-value" style="color:${warnColor};font-size:11px;line-height:1.35">${warnText}</div>
+    </div>`;
 
   document.getElementById('wxCondition').textContent = wmoDesc(wxCode);
   document.getElementById('wxTime').textContent =

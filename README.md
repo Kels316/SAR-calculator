@@ -24,8 +24,9 @@ A browser-based Search and Rescue planning tool based on the Australian National
 - **Interactive map** — tap to place a draggable LKP pin, or type coordinates; map shows LKP, search area circle, dotted bounding square (oriented to pattern direction), and calculated search pattern
 - **Responsive layout** — works on desktop and tablet; portrait tablet (≤768px) stacks panels into a single scrollable column so the tide chart is always reachable
 - **Waypoint export** — GPX and KML export for upload to Google Earth or GPS devices
-- **Print / Save PDF** — generates a clean monospace SAR plan summary (incident, drift, datum, search parameters, live conditions, tide HW/LW, waypoints) and opens the browser print dialog
-- **Copy Summary** — copies the full SAR plan text to the clipboard, including live marine conditions and tide extremes if data has been fetched
+- **BOM marine warnings** — fetches active marine weather warnings for the LKP from the Bureau of Meteorology, displayed in the live conditions panel with GMDSS severity colour-coding (strong wind / gale / storm force / hurricane force)
+- **Print / Save PDF** — generates a clean monospace SAR plan summary (incident, drift, datum, search parameters, live conditions, tide HW/LW, active warnings with full text, waypoints) and opens the browser print dialog
+- **Copy Summary** — copies the full SAR plan text to the clipboard, including live marine conditions, tide extremes, and full BOM warning text if data has been fetched
 
 ---
 
@@ -43,6 +44,7 @@ Enter LKP coordinates and click **Fetch Live Marine Data** to pull current condi
 | Sea surface temperature | Open-Meteo Marine API |
 | Weather factor (Wf) | Derived from significant wave height |
 | Tide predictions | ANTT 2026 — Australian Hydrographic Office (local DB) |
+| Marine warnings | Bureau of Meteorology (BOM) Weather API — location-specific active warnings |
 
 Fields auto-populated from live data are highlighted in green. Editing any field manually removes the green highlight.
 
