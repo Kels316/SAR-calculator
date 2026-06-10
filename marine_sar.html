@@ -2356,37 +2356,30 @@ function buildSummary(d) {
     '',
     '── WAYPOINTS ────────────────────────',
   ];
-  d.pat.waypoints.forEach((wp, i) => {
-    lines.push(`  WP${String(i+1).padStart(2,'0')}  ${formatLatLon(wp.lat, wp.lon)}   ${wp.note}`);
-  });
-
   const wps = d.pat.waypoints;
-  if (wps.length >= 2) {
-    lines.push('');
-    lines.push('── LEG INSTRUCTIONS ─────────────────');
-    for (let i = 0; i < wps.length - 1; i++) {
-      const from = wps[i], to = wps[i + 1];
-      const hdg  = bearingDeg(from.lat, from.lon, to.lat, to.lon);
-      const dist = haversineNm(from.lat, from.lon, to.lat, to.lon);
+  wps.forEach((wp, i) => {
+    lines.push(`  WP${String(i+1).padStart(2,'0')}  ${formatLatLon(wp.lat, wp.lon)}   ${wp.note}`);
+    if (i < wps.length - 1) {
+      const next = wps[i + 1];
+      const hdg  = bearingDeg(wp.lat, wp.lon, next.lat, next.lon);
+      const dist = haversineNm(wp.lat, wp.lon, next.lat, next.lon);
       const mins = (dist / d.assetSpeed) * 60;
       const timeStr = mins < 60
         ? `${Math.round(mins)} min`
         : `${Math.floor(mins/60)}h ${Math.round(mins%60)}min`;
-      let turnStr = '';
+      let turnStr;
       if (i < wps.length - 2) {
-        const nextHdg = bearingDeg(to.lat, to.lon, wps[i+2].lat, wps[i+2].lon);
+        const nextHdg = bearingDeg(next.lat, next.lon, wps[i+2].lat, wps[i+2].lon);
         let delta = ((nextHdg - hdg) + 360) % 360;
         if (delta > 180) delta -= 360;
-        const absDelta = Math.abs(Math.round(delta));
         const dir = delta > 0 ? 'STBD' : 'PORT';
-        turnStr = `  → Turn ${dir} onto ${Math.round(nextHdg)}°T (${absDelta}°)`;
+        turnStr = `Turn ${dir} → ${Math.round(nextHdg).toString().padStart(3,'0')}°T`;
       } else {
-        turnStr = '  → Pattern complete';
+        turnStr = 'Pattern complete';
       }
-      lines.push(`  L${String(i+1).padStart(2,' ')}  Steer ${Math.round(hdg).toString().padStart(3,'0')}°T   ${dist.toFixed(2)} nm   ${timeStr}`);
-      lines.push(turnStr);
+      lines.push(`        Steer ${Math.round(hdg).toString().padStart(3,'0')}°T  ·  ${dist.toFixed(2)} nm  ·  ${timeStr}  ·  ${turnStr}`);
     }
-  }
+  });
   lines.push('════════════════════════════════════════');
   return lines.join('\n');
 }
