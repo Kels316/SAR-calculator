@@ -1987,13 +1987,13 @@ function patternSector(dLat, dLon, W, S, area, r, driftDir) {
   const sectorLegs = [
     { leg: 1, hdg: hdg1, dist: r, turn: '120° STBD' },
     { leg: 2, hdg: hdg2, dist: r, turn: '120° STBD' },
-    { leg: 3, hdg: hdg3, dist: r, turn: 'Continue through datum — no turn' },
+    { leg: 3, hdg: hdg3, dist: r, turn: 'Continue through datum — no turn', toDatum: true },
     { leg: 4, hdg: hdg3, dist: r, turn: '120° STBD' },
     { leg: 5, hdg: hdg1, dist: r, turn: '120° STBD' },
-    { leg: 6, hdg: hdg2, dist: r, turn: 'Continue through datum — no turn' },
+    { leg: 6, hdg: hdg2, dist: r, turn: 'Continue through datum — no turn', toDatum: true },
     { leg: 7, hdg: hdg2, dist: r, turn: '120° STBD' },
     { leg: 8, hdg: hdg3, dist: r, turn: '120° STBD' },
-    { leg: 9, hdg: hdg1, dist: r, turn: 'Search complete' },
+    { leg: 9, hdg: hdg1, dist: r, turn: 'Search complete', toDatum: true },
   ];
 
   // Map geometry: three triangles, all vertices lie on the search circle at radius R
@@ -2263,9 +2263,12 @@ function calculate() {
       const isDatum    = leg.turn.includes('datum');
       const turnClass  = isComplete ? 'sector-complete' : isDatum ? '' : 'sector-turn';
       const turnColor  = isDatum ? 'color:var(--accent)' : '';
+      const hdgCell = leg.toDatum
+        ? `<em style="color:var(--muted)">Steer towards datum</em>`
+        : `Steer <strong>${Math.round(leg.hdg).toString().padStart(3,'0')}°T</strong>`;
       html += `<tr>
         <td class="wp-num">L${leg.leg}</td>
-        <td class="wp-coord">Steer <strong>${Math.round(leg.hdg).toString().padStart(3,'0')}°T</strong></td>
+        <td class="wp-coord">${hdgCell}</td>
         <td class="wp-note">${legTime}</td>
         <td class="wp-note ${turnClass}" style="${turnColor}">${isDatum ? '⬤' : '↱'} ${leg.turn}</td>
       </tr>`;
@@ -2420,7 +2423,8 @@ function buildSummary(d) {
     lines.push('');
     lines.push(`── Sector Search — R = ${d.pat.r.toFixed(2)} nm · ${legTime} per leg @ ${d.assetSpeed} kn ──`);
     for (const leg of d.pat.sectorLegs) {
-      lines.push(`  L${leg.leg}  Steer ${Math.round(leg.hdg).toString().padStart(3,'0')}°T  ·  ${legTime}  →  ${leg.turn}`);
+      const hdgStr = leg.toDatum ? 'Steer towards datum' : `Steer ${Math.round(leg.hdg).toString().padStart(3,'0')}°T`;
+      lines.push(`  L${leg.leg}  ${hdgStr}  ·  ${legTime}  →  ${leg.turn}`);
     }
   }
   lines.push('════════════════════════════════════════');
