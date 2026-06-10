@@ -513,6 +513,54 @@
   .wp-coord { color: #fff; }
   .wp-note { color: var(--muted); font-size: 17px; }
 
+  /* ── LEG INSTRUCTIONS ── */
+  .leg-instructions-header {
+    font-family: var(--mono);
+    font-size: 11px;
+    letter-spacing: 2px;
+    color: var(--muted);
+    text-transform: uppercase;
+    padding: 8px 16px;
+    border-top: 1px solid var(--border);
+    background: rgba(0,0,0,0.2);
+  }
+  .leg-row {
+    display: grid;
+    grid-template-columns: 44px 1fr;
+    border-bottom: 1px solid rgba(30,45,66,0.6);
+    font-family: var(--mono);
+  }
+  .leg-row:last-child { border-bottom: none; }
+  .leg-num {
+    padding: 10px 0 10px 16px;
+    color: var(--accent);
+    font-size: 13px;
+    font-weight: bold;
+    align-self: start;
+    padding-top: 11px;
+  }
+  .leg-detail { padding: 8px 16px 8px 0; }
+  .leg-from {
+    font-size: 13px;
+    color: var(--muted);
+    margin-bottom: 3px;
+  }
+  .leg-hdg {
+    font-size: 17px;
+    color: #fff;
+    margin-bottom: 2px;
+  }
+  .leg-hdg span { color: var(--accent); }
+  .leg-dist-time {
+    font-size: 13px;
+    color: var(--muted);
+    margin-bottom: 4px;
+  }
+  .leg-turn {
+    font-size: 13px;
+    color: var(--accent2);
+  }
+
   /* ── POD BAR ── */
   .pod-bar-wrap {
     padding: 12px 16px;
@@ -1336,6 +1384,10 @@
           </thead>
           <tbody id="wpBody"></tbody>
         </table>
+        <div id="legInstructions" style="display:none">
+          <div class="leg-instructions-header">LEG INSTRUCTIONS</div>
+          <div id="legBody"></div>
+        </div>
       </div>
 
       <!-- DRIFT BREAKDOWN -->
@@ -2195,13 +2247,56 @@ function calculate() {
     tbody.appendChild(tr);
   }
 
+  // ── LEG INSTRUCTIONS ──────────────────────────────────────
+  const legDiv = document.getElementById('legInstructions');
+  const legBody = document.getElementById('legBody');
+  legBody.innerHTML = '';
+  const wps = pat.waypoints;
+  if (wps.length >= 2) {
+    legDiv.style.display = 'block';
+    for (let i = 0; i < wps.length - 1; i++) {
+      const from = wps[i], to = wps[i + 1];
+      const hdg  = bearingDeg(from.lat, from.lon, to.lat, to.lon);
+      const dist = haversineNm(from.lat, from.lon, to.lat, to.lon);
+      const mins = (dist / assetSpeed) * 60;
+      const timeStr = mins < 60
+        ? `${Math.round(mins)} min`
+        : `${Math.floor(mins/60)}h ${Math.round(mins%60)}min`;
+
+      // Turn instruction
+      let turnStr = '';
+      if (i < wps.length - 2) {
+        const nextHdg = bearingDeg(to.lat, to.lon, wps[i+2].lat, wps[i+2].lon);
+        let delta = ((nextHdg - hdg) + 360) % 360;
+        if (delta > 180) delta -= 360;
+        const absDelta = Math.abs(Math.round(delta));
+        const dir = delta > 0 ? 'STBD' : 'PORT';
+        turnStr = `Turn ${dir} onto ${Math.round(nextHdg)}°T (${absDelta}°)`;
+      }
+
+      const row = document.createElement('div');
+      row.className = 'leg-row';
+      row.innerHTML = `
+        <div class="leg-num">L${i+1}</div>
+        <div class="leg-detail">
+          <div class="leg-from">From WP${String(i+1).padStart(2,'0')} — ${from.note}</div>
+          <div class="leg-hdg">Steer <span>${Math.round(hdg)}°T</span></div>
+          <div class="leg-dist-time">${dist.toFixed(2)} nm · ${timeStr} @ ${assetSpeed} kn</div>
+          ${turnStr ? `<div class="leg-turn">↱ ${turnStr}</div>` : '<div class="leg-turn" style="color:var(--ok)">✓ Pattern complete</div>'}
+        </div>`;
+      legBody.appendChild(row);
+    }
+  } else {
+    legDiv.style.display = 'none';
+  }
+
   setEl('r_current', `${currentSpd.toFixed(2)} kn → ${currentDir.toFixed(0)}°T`);
   setEl('r_wc',      `${wcSpd.toFixed(2)} kn → ${windTo.toFixed(0)}°T`);
   setEl('r_leeway',  `${lwSpd.toFixed(2)} kn → ${windTo.toFixed(0)}°T  (${(leewayRate*100).toFixed(1)}% wind)`);
 
   lastSummary = buildSummary({
     lkpLat, lkpLon, elapsedH, sd, distNm, datum, E, r, area,
-    W, S, C, POD, Z, totalH, patNames, patType, pat
+    W, S, C, POD, Z, totalH, patNames, patType, pat, assetSpeed
   });
 
   lastCalc = { lkpLat, lkpLon, datum, r, patNames, patType, pat };
@@ -2311,6 +2406,34 @@ function buildSummary(d) {
   d.pat.waypoints.forEach((wp, i) => {
     lines.push(`  WP${String(i+1).padStart(2,'0')}  ${formatLatLon(wp.lat, wp.lon)}   ${wp.note}`);
   });
+
+  const wps = d.pat.waypoints;
+  if (wps.length >= 2) {
+    lines.push('');
+    lines.push('── LEG INSTRUCTIONS ─────────────────');
+    for (let i = 0; i < wps.length - 1; i++) {
+      const from = wps[i], to = wps[i + 1];
+      const hdg  = bearingDeg(from.lat, from.lon, to.lat, to.lon);
+      const dist = haversineNm(from.lat, from.lon, to.lat, to.lon);
+      const mins = (dist / d.assetSpeed) * 60;
+      const timeStr = mins < 60
+        ? `${Math.round(mins)} min`
+        : `${Math.floor(mins/60)}h ${Math.round(mins%60)}min`;
+      let turnStr = '';
+      if (i < wps.length - 2) {
+        const nextHdg = bearingDeg(to.lat, to.lon, wps[i+2].lat, wps[i+2].lon);
+        let delta = ((nextHdg - hdg) + 360) % 360;
+        if (delta > 180) delta -= 360;
+        const absDelta = Math.abs(Math.round(delta));
+        const dir = delta > 0 ? 'STBD' : 'PORT';
+        turnStr = `  → Turn ${dir} onto ${Math.round(nextHdg)}°T (${absDelta}°)`;
+      } else {
+        turnStr = '  → Pattern complete';
+      }
+      lines.push(`  L${String(i+1).padStart(2,' ')}  Steer ${Math.round(hdg).toString().padStart(3,'0')}°T   ${dist.toFixed(2)} nm   ${timeStr}`);
+      lines.push(turnStr);
+    }
+  }
   lines.push('════════════════════════════════════════');
   return lines.join('\n');
 }
@@ -2508,6 +2631,14 @@ function haversineNm(lat1, lon1, lat2, lon2) {
   const dl = (lon2 - lon1) * Math.PI / 180;
   const a  = Math.sin(df / 2) ** 2 + Math.cos(f1) * Math.cos(f2) * Math.sin(dl / 2) ** 2;
   return 3440.065 * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
+
+function bearingDeg(lat1, lon1, lat2, lon2) {
+  const f1 = lat1 * Math.PI / 180, f2 = lat2 * Math.PI / 180;
+  const dl = (lon2 - lon1) * Math.PI / 180;
+  const y = Math.sin(dl) * Math.cos(f2);
+  const x = Math.cos(f1) * Math.sin(f2) - Math.sin(f1) * Math.cos(f2) * Math.cos(dl);
+  return ((Math.atan2(y, x) * 180 / Math.PI) + 360) % 360;
 }
 
 function findNearestBar(lat, lon) {

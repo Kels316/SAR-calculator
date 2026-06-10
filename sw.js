@@ -1,56 +1,77 @@
-const CACHE = 'sar-v1';
+// marine_sar.html → network-first (always fresh when online)
+// tide-db.js      → cache-first  (12 MB, changes annually)
+// API calls       → network-first
+// tiles/CDN       → network-first
 
-const CORE = [
-  '/SAR-calculator/marine_sar.html',
-  '/SAR-calculator/tide-db.js',
-  '/SAR-calculator/manifest.json',
+const CACHE_NAME = 'sar-v1';
+
+const API_ORIGINS = [
+  'https://marine-api.open-meteo.com',
+  'https://api.open-meteo.com',
+  'https://api.weather.bom.gov.au',
 ];
 
-// Install — cache core files
-self.addEventListener('install', e => {
-  e.waitUntil(
-    caches.open(CACHE).then(c => c.addAll(CORE))
+// ── Install: pre-cache tide-db (large static file) ────────
+self.addEventListener('install', event => {
+  event.waitUntil(
+    caches.open(CACHE_NAME)
+      .then(cache => cache.add('./tide-db.js').catch(() => {}))
+      .then(() => self.skipWaiting())
   );
-  self.skipWaiting();
 });
 
-// Activate — clean up old caches
-self.addEventListener('activate', e => {
-  e.waitUntil(
-    caches.keys().then(keys =>
-      Promise.all(keys.filter(k => k !== CACHE).map(k => caches.delete(k)))
-    )
+// ── Activate: remove old caches ───────────────────────────
+self.addEventListener('activate', event => {
+  event.waitUntil(
+    caches.keys()
+      .then(keys => Promise.all(keys.filter(k => k !== CACHE_NAME).map(k => caches.delete(k))))
+      .then(() => self.clients.claim())
   );
-  self.clients.claim();
 });
 
-// Fetch — cache-first for core files, network-first for APIs
-self.addEventListener('fetch', e => {
-  const url = new URL(e.request.url);
+// ── Fetch ──────────────────────────────────────────────────
+self.addEventListener('fetch', event => {
+  const url = new URL(event.request.url);
 
-  // Always go to network for external APIs
-  if (
-    url.hostname.includes('open-meteo.com') ||
-    url.hostname.includes('bom.gov.au') ||
-    url.hostname.includes('unpkg.com') ||
-    url.hostname.includes('fonts.googleapis.com') ||
-    url.hostname.includes('fonts.gstatic.com')
-  ) {
-    e.respondWith(fetch(e.request).catch(() => new Response('', { status: 503 })));
+  // tide-db.js: cache-first (large, changes annually)
+  if (url.pathname.endsWith('tide-db.js')) {
+    event.respondWith(cacheFirst(event.request));
     return;
   }
 
-  // Cache-first for everything else (app shell + tide DB)
-  e.respondWith(
-    caches.match(e.request).then(cached => {
-      if (cached) return cached;
-      return fetch(e.request).then(resp => {
-        if (resp && resp.status === 200) {
-          const clone = resp.clone();
-          caches.open(CACHE).then(c => c.put(e.request, clone));
-        }
-        return resp;
-      });
-    })
-  );
+  // Everything else: network-first
+  event.respondWith(networkFirst(event.request));
 });
+
+async function cacheFirst(request) {
+  const cached = await caches.match(request);
+  if (cached) return cached;
+  try {
+    const response = await fetch(request);
+    if (response.ok) {
+      const cache = await caches.open(CACHE_NAME);
+      cache.put(request, response.clone());
+    }
+    return response;
+  } catch {
+    return new Response('Offline — resource not cached', { status: 503 });
+  }
+}
+
+async function networkFirst(request) {
+  try {
+    const response = await fetch(request);
+    if (response.ok) {
+      const cache = await caches.open(CACHE_NAME);
+      cache.put(request, response.clone());
+    }
+    return response;
+  } catch {
+    const cached = await caches.match(request);
+    if (cached) return cached;
+    return new Response(JSON.stringify({ error: true, reason: 'offline' }), {
+      status: 503,
+      headers: { 'Content-Type': 'application/json' }
+    });
+  }
+}
