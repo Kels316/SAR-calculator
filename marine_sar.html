@@ -1981,29 +1981,35 @@ function patternSector(dLat, dLon, W, S, area, r, driftDir) {
   const hdg2 = (hdg1 + 120) % 360;
   const hdg3 = (hdg1 + 240) % 360;
 
+  // 9 legs: three equilateral triangles, each sharing datum as a vertex.
+  // Headings cycle hdg1→hdg2→hdg3, hdg3→hdg1→hdg2, hdg2→hdg3→hdg1.
+  // Between triangles vessel passes straight through datum — no turn.
   const sectorLegs = [
-    { sweep: 1, leg: 1, hdg: hdg1, dist: r,     turn: '120° STBD' },
-    { sweep: 1, leg: 2, hdg: hdg2, dist: r,     turn: '120° STBD' },
-    { sweep: 1, leg: 3, hdg: hdg3, dist: r,     turn: 'Return to datum — adjust course for Sweep 2' },
-    { sweep: 2, leg: 1, hdg: hdg1, dist: 2 * r, turn: '120° STBD' },
-    { sweep: 2, leg: 2, hdg: hdg2, dist: 2 * r, turn: '120° STBD' },
-    { sweep: 2, leg: 3, hdg: hdg3, dist: 2 * r, turn: 'Search complete' },
+    { leg: 1, hdg: hdg1, dist: r, turn: '120° STBD' },
+    { leg: 2, hdg: hdg2, dist: r, turn: '120° STBD' },
+    { leg: 3, hdg: hdg3, dist: r, turn: 'Continue through datum — no turn' },
+    { leg: 4, hdg: hdg3, dist: r, turn: '120° STBD' },
+    { leg: 5, hdg: hdg1, dist: r, turn: '120° STBD' },
+    { leg: 6, hdg: hdg2, dist: r, turn: 'Continue through datum — no turn' },
+    { leg: 7, hdg: hdg2, dist: r, turn: '120° STBD' },
+    { leg: 8, hdg: hdg3, dist: r, turn: '120° STBD' },
+    { leg: 9, hdg: hdg1, dist: r, turn: 'Search complete' },
   ];
 
-  // Build map geometry: two equilateral triangles (sweep 1 = R, sweep 2 = 2R)
-  function triangle(dist) {
-    const p1 = destinationPoint(dLat, dLon, hdg1, dist);
-    const p2 = destinationPoint(dLat, dLon, hdg2, dist);
-    const p3 = destinationPoint(dLat, dLon, hdg3, dist);
-    return [[dLat, dLon], [p1.lat, p1.lon], [p2.lat, p2.lon], [p3.lat, p3.lon], [dLat, dLon]];
+  // Map geometry: three triangles, all vertices lie on the search circle at radius R
+  function tri(startHdg) {
+    const a = destinationPoint(dLat, dLon, startHdg, r);
+    const b = destinationPoint(a.lat, a.lon, (startHdg + 120) % 360, r);
+    return [[dLat, dLon], [a.lat, a.lon], [b.lat, b.lon], [dLat, dLon]];
   }
+  const sectorMapCoords = [tri(hdg1), tri(hdg3), tri(hdg2)];
 
   return {
     total: 9 * r,
     startLat: dLat, startLon: dLon,
     waypoints: [{ lat: dLat, lon: dLon, note: 'Datum — place floating marker here' }],
     sectorLegs,
-    sectorMapCoords: [triangle(r), triangle(2 * r)],
+    sectorMapCoords,
     r,
   };
 }
@@ -2247,24 +2253,21 @@ function calculate() {
   // Sector search: render leg instruction table below datum row
   const sectorTable = document.getElementById('sectorLegTable');
   if (pat.sectorLegs) {
-    let currentSweep = 0;
-    let html = '';
+    const legMins = (pat.r / assetSpeed) * 60;
+    const legTime = legMins < 60 ? `${Math.round(legMins)} min` : `${Math.floor(legMins/60)}h ${Math.round(legMins%60)}min`;
+    let html = `<tr class="sector-sweep-header">
+      <td colspan="4">R = ${pat.r.toFixed(2)} nm &nbsp;·&nbsp; ${legTime} per leg @ ${assetSpeed} kn</td>
+    </tr>`;
     for (const leg of pat.sectorLegs) {
-      if (leg.sweep !== currentSweep) {
-        currentSweep = leg.sweep;
-        const legDist = leg.sweep === 1 ? pat.r : 2 * pat.r;
-        const legMins = (legDist / assetSpeed) * 60;
-        const legTime = legMins < 60 ? `${Math.round(legMins)} min` : `${Math.floor(legMins/60)}h ${Math.round(legMins%60)}min`;
-        html += `<tr class="sector-sweep-header">
-          <td colspan="4">Sweep ${leg.sweep} — legs of ${legDist.toFixed(2)} nm &nbsp;·&nbsp; ${legTime} per leg @ ${assetSpeed} kn</td>
-        </tr>`;
-      }
-      const isLast = leg.turn.includes('complete');
+      const isComplete = leg.turn.includes('complete');
+      const isDatum    = leg.turn.includes('datum');
+      const turnClass  = isComplete ? 'sector-complete' : isDatum ? '' : 'sector-turn';
+      const turnColor  = isDatum ? 'color:var(--accent)' : '';
       html += `<tr>
-        <td class="wp-num">L${(leg.sweep - 1) * 3 + leg.leg}</td>
+        <td class="wp-num">L${leg.leg}</td>
         <td class="wp-coord">Steer <strong>${Math.round(leg.hdg).toString().padStart(3,'0')}°T</strong></td>
         <td class="wp-note">${leg.dist.toFixed(2)} nm</td>
-        <td class="wp-note ${isLast ? 'sector-complete' : 'sector-turn'}">↱ ${leg.turn}</td>
+        <td class="wp-note ${turnClass}" style="${turnColor}">${isDatum ? '⬤' : '↱'} ${leg.turn}</td>
       </tr>`;
     }
     sectorTable.innerHTML = html;
@@ -2412,18 +2415,12 @@ function buildSummary(d) {
   });
 
   if (d.pat.sectorLegs) {
+    const legMins = (d.pat.r / d.assetSpeed) * 60;
+    const legTime = legMins < 60 ? `${Math.round(legMins)} min` : `${Math.floor(legMins/60)}h ${Math.round(legMins%60)}min`;
     lines.push('');
-    let currentSweep = 0;
+    lines.push(`── Sector Search — R = ${d.pat.r.toFixed(2)} nm · ${legTime} per leg @ ${d.assetSpeed} kn ──`);
     for (const leg of d.pat.sectorLegs) {
-      if (leg.sweep !== currentSweep) {
-        currentSweep = leg.sweep;
-        const legDist = leg.sweep === 1 ? d.pat.r : 2 * d.pat.r;
-        const legMins = (legDist / d.assetSpeed) * 60;
-        const legTime = legMins < 60 ? `${Math.round(legMins)} min` : `${Math.floor(legMins/60)}h ${Math.round(legMins%60)}min`;
-        lines.push(`── Sweep ${leg.sweep} — ${legDist.toFixed(2)} nm per leg · ${legTime} @ ${d.assetSpeed} kn ──`);
-      }
-      const legNum = (leg.sweep - 1) * 3 + leg.leg;
-      lines.push(`  L${legNum}  Steer ${Math.round(leg.hdg).toString().padStart(3,'0')}°T  ·  ${leg.dist.toFixed(2)} nm  →  ${leg.turn}`);
+      lines.push(`  L${leg.leg}  Steer ${Math.round(leg.hdg).toString().padStart(3,'0')}°T  ·  ${leg.dist.toFixed(2)} nm  →  ${leg.turn}`);
     }
   }
   lines.push('════════════════════════════════════════');
@@ -3161,7 +3158,7 @@ function updateMapPattern(lkpLat, lkpLon, datum, r, pat, patType, driftDir) {
   // Pattern route
   let coords;
   if (pat.sectorMapCoords) {
-    // Sector search: draw two indicative triangles, no WP markers
+    // Sector search: draw three indicative triangles, no WP markers
     for (const tri of pat.sectorMapCoords) {
       const triLine = L.polyline(tri, { color: '#2ec4b6', weight: 2, opacity: 0.7, dashArray: '6 4' }).addTo(_map);
       _patternLayers.push(triLine);
