@@ -1990,11 +1990,20 @@ function patternSector(dLat, dLon, W, S, area, r, driftDir) {
     { sweep: 2, leg: 3, hdg: hdg3, dist: 2 * r, turn: 'Search complete' },
   ];
 
+  // Build map geometry: two equilateral triangles (sweep 1 = R, sweep 2 = 2R)
+  function triangle(dist) {
+    const p1 = destinationPoint(dLat, dLon, hdg1, dist);
+    const p2 = destinationPoint(dLat, dLon, hdg2, dist);
+    const p3 = destinationPoint(dLat, dLon, hdg3, dist);
+    return [[dLat, dLon], [p1.lat, p1.lon], [p2.lat, p2.lon], [p3.lat, p3.lon], [dLat, dLon]];
+  }
+
   return {
     total: 9 * r,
     startLat: dLat, startLon: dLon,
     waypoints: [{ lat: dLat, lon: dLon, note: 'Datum — place floating marker here' }],
     sectorLegs,
+    sectorMapCoords: [triangle(r), triangle(2 * r)],
     r,
   };
 }
@@ -3150,9 +3159,19 @@ function updateMapPattern(lkpLat, lkpLon, datum, r, pat, patType, driftDir) {
   }
 
   // Pattern route
-  const coords = pat.waypoints.map(wp => [wp.lat, wp.lon]);
-  const route = L.polyline(coords, { color: '#2ec4b6', weight: 2, opacity: 0.9 }).addTo(_map);
-  _patternLayers.push(route);
+  let coords;
+  if (pat.sectorMapCoords) {
+    // Sector search: draw two indicative triangles, no WP markers
+    for (const tri of pat.sectorMapCoords) {
+      const triLine = L.polyline(tri, { color: '#2ec4b6', weight: 2, opacity: 0.7, dashArray: '6 4' }).addTo(_map);
+      _patternLayers.push(triLine);
+    }
+    coords = pat.sectorMapCoords.flat();
+  } else {
+    coords = pat.waypoints.map(wp => [wp.lat, wp.lon]);
+    const route = L.polyline(coords, { color: '#2ec4b6', weight: 2, opacity: 0.9 }).addTo(_map);
+    _patternLayers.push(route);
+  }
 
   // Datum marker (on top)
   _datumMarker = L.circleMarker([datum.lat, datum.lon], {
