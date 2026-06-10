@@ -1377,6 +1377,9 @@
         <div class="sector-leg-wrap" style="display:none">
           <table class="wp-table" id="sectorLegTable"></table>
         </div>
+        <div class="sector-leg-wrap" id="expandLegWrap" style="display:none">
+          <table class="wp-table" id="expandLegTable"></table>
+        </div>
       </div>
 
       <!-- DRIFT BREAKDOWN -->
@@ -1943,29 +1946,40 @@ function _expLookup(r, S) {
   return { N: entry[0], D: entry[1], rUsed: rR, sUsed: _EXP_S_VALS[si] };
 }
 
-function patternExpanding(dLat, dLon, W, S, area, r, driftDir) {
+function patternExpanding(dLat, dLon, W, S, area, r, windFrom) {
   if (!r || r <= 0) r = Math.sqrt(area / Math.PI);
   const lk = _expLookup(r, S);
   const { N, D, rUsed, sUsed } = lk;
-  const maxSteps = (N - 1) / 2;   // = 2k
+  const maxSteps = (N - 1) / 2;
 
-  const wps = [];
+  // Round first bearing (into wind) to nearest 10°
+  const hdg0 = (Math.round(windFrom / 10) * 10) % 360;
+
+  const expandingLegs = [];
+  const mapWps = [{ lat: dLat, lon: dLon }];
   let cur = { lat: dLat, lon: dLon }, total = 0;
-  wps.push({ lat: dLat, lon: dLon,
-    note: `Datum — expanding square  (table: R=${rUsed}nm S=${sUsed}nm → N=${N} legs, D=${D}nm)` });
 
   for (let j = 1; j <= N; j++) {
-    const legLen = Math.min(Math.ceil(j / 2), maxSteps) * S;
-    const hdg    = (driftDir + 90 * (j - 1)) % 360;
-    const nxt    = destinationPoint(cur.lat, cur.lon, hdg, legLen);
-    const isLast = (j === N);
-    wps.push({ lat: nxt.lat, lon: nxt.lon,
-      note: `Leg ${j}  ${legLen.toFixed(2)} nm  hdg ${hdg.toFixed(0)}°T${isLast ? ' — search complete' : ' — turn 90° stbd'}` });
-    total += legLen;
+    const legDist = Math.min(Math.ceil(j / 2), maxSteps) * S;
+    const hdg     = (hdg0 + 90 * (j - 1)) % 360;
+    const nxt     = destinationPoint(cur.lat, cur.lon, hdg, legDist);
+    const isLast  = (j === N);
+    expandingLegs.push({
+      leg: j, hdg, dist: legDist,
+      turn: isLast ? 'Search complete' : '90° STBD',
+    });
+    mapWps.push({ lat: nxt.lat, lon: nxt.lon });
+    total += legDist;
     cur = nxt;
   }
 
-  return { total, N, D, rUsed, sUsed, startLat: dLat, startLon: dLon, waypoints: wps };
+  return {
+    total, N, D, rUsed, sUsed, startLat: dLat, startLon: dLon,
+    waypoints: [{ lat: dLat, lon: dLon,
+      note: `Datum — expanding square  (R=${rUsed}nm S=${sUsed}nm → N=${N} legs)` }],
+    expandingLegs,
+    mapCoords: mapWps.map(wp => [wp.lat, wp.lon]),
+  };
 }
 
 function patternSector(dLat, dLon, W, S, area, r, driftDir) {
@@ -2216,7 +2230,7 @@ function calculate() {
   // Render datum row(s)
   wps.slice(0, maxWp).forEach((wp, i) => {
     let navHtml = '';
-    if (!pat.sectorLegs && i < wps.length - 1) {
+    if (!pat.sectorLegs && !pat.expandingLegs && i < wps.length - 1) {
       const next = wps[i + 1];
       const hdg  = bearingDeg(wp.lat, wp.lon, next.lat, next.lon);
       const dist = haversineNm(wp.lat, wp.lon, next.lat, next.lon);
@@ -2277,6 +2291,31 @@ function calculate() {
     sectorTable.closest('.sector-leg-wrap').style.display = '';
   } else {
     sectorTable.closest('.sector-leg-wrap').style.display = 'none';
+  }
+
+  // Expanding square: render leg instruction table
+  const expandTable = document.getElementById('expandLegTable');
+  const expandWrap  = document.getElementById('expandLegWrap');
+  if (pat.expandingLegs) {
+    let html = `<tr class="sector-sweep-header">
+      <td colspan="4">N=${pat.N} legs &nbsp;·&nbsp; R=${pat.rUsed}nm S=${pat.sUsed}nm &nbsp;·&nbsp; first leg ${Math.round(pat.expandingLegs[0].hdg).toString().padStart(3,'0')}°T into wind @ ${assetSpeed} kn</td>
+    </tr>`;
+    for (const leg of pat.expandingLegs) {
+      const legMins = (leg.dist / assetSpeed) * 60;
+      const legTime = legMins < 60 ? `${Math.round(legMins)} min` : `${Math.floor(legMins/60)}h ${Math.round(legMins%60)}min`;
+      const isComplete = leg.turn === 'Search complete';
+      const turnClass  = isComplete ? 'sector-complete' : 'sector-turn';
+      html += `<tr>
+        <td class="wp-num">L${leg.leg}</td>
+        <td class="wp-coord">Steer <strong>${Math.round(leg.hdg).toString().padStart(3,'0')}°T</strong></td>
+        <td class="wp-note">${legTime}</td>
+        <td class="wp-note ${turnClass}">↱ ${leg.turn}</td>
+      </tr>`;
+    }
+    expandTable.innerHTML = html;
+    expandWrap.style.display = '';
+  } else {
+    expandWrap.style.display = 'none';
   }
 
   setEl('r_current', `${currentSpd.toFixed(2)} kn → ${currentDir.toFixed(0)}°T`);
@@ -2395,7 +2434,7 @@ function buildSummary(d) {
   const wps = d.pat.waypoints;
   wps.forEach((wp, i) => {
     lines.push(`  WP${String(i+1).padStart(2,'0')}  ${formatLatLon(wp.lat, wp.lon)}   ${wp.note}`);
-    if (!d.pat.sectorLegs && i < wps.length - 1) {
+    if (!d.pat.sectorLegs && !d.pat.expandingLegs && i < wps.length - 1) {
       const next = wps[i + 1];
       const hdg  = bearingDeg(wp.lat, wp.lon, next.lat, next.lon);
       const dist = haversineNm(wp.lat, wp.lon, next.lat, next.lon);
@@ -2425,6 +2464,15 @@ function buildSummary(d) {
     for (const leg of d.pat.sectorLegs) {
       const hdgStr = leg.toDatum ? 'Steer towards datum' : `Steer ${Math.round(leg.hdg).toString().padStart(3,'0')}°T`;
       lines.push(`  L${leg.leg}  ${hdgStr}  ·  ${legTime}  →  ${leg.turn}`);
+    }
+  }
+  if (d.pat.expandingLegs) {
+    lines.push('');
+    lines.push(`── Expanding Square — N=${d.pat.N} legs, R=${d.pat.rUsed}nm S=${d.pat.sUsed}nm @ ${d.assetSpeed} kn ──`);
+    for (const leg of d.pat.expandingLegs) {
+      const legMins = (leg.dist / d.assetSpeed) * 60;
+      const legTime = legMins < 60 ? `${Math.round(legMins)} min` : `${Math.floor(legMins/60)}h ${Math.round(legMins%60)}min`;
+      lines.push(`  L${leg.leg}  Steer ${Math.round(leg.hdg).toString().padStart(3,'0')}°T  ·  ${legTime}  →  ${leg.turn}`);
     }
   }
   lines.push('════════════════════════════════════════');
@@ -3168,6 +3216,11 @@ function updateMapPattern(lkpLat, lkpLon, datum, r, pat, patType, driftDir) {
       _patternLayers.push(triLine);
     }
     coords = pat.sectorMapCoords.flat();
+  } else if (pat.mapCoords) {
+    // Expanding square: draw from internal map coords (datum + all leg endpoints)
+    coords = pat.mapCoords;
+    const route = L.polyline(coords, { color: '#2ec4b6', weight: 2, opacity: 0.9 }).addTo(_map);
+    _patternLayers.push(route);
   } else {
     coords = pat.waypoints.map(wp => [wp.lat, wp.lon]);
     const route = L.polyline(coords, { color: '#2ec4b6', weight: 2, opacity: 0.9 }).addTo(_map);
