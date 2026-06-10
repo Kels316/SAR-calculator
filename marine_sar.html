@@ -1987,13 +1987,13 @@ function patternSector(dLat, dLon, W, S, area, r, driftDir) {
   const sectorLegs = [
     { leg: 1, hdg: hdg1, dist: r, turn: '120° STBD' },
     { leg: 2, hdg: hdg2, dist: r, turn: '120° STBD' },
-    { leg: 3, hdg: hdg3, dist: r, turn: 'Continue through datum — no turn', toDatum: true },
+    { leg: 3, toDatum: true, dist: r, turn: `At datum: turn onto ${Math.round(hdg3).toString().padStart(3,'0')}°T` },
     { leg: 4, hdg: hdg3, dist: r, turn: '120° STBD' },
     { leg: 5, hdg: hdg1, dist: r, turn: '120° STBD' },
-    { leg: 6, hdg: hdg2, dist: r, turn: 'Continue through datum — no turn', toDatum: true },
+    { leg: 6, toDatum: true, dist: r, turn: `At datum: turn onto ${Math.round(hdg2).toString().padStart(3,'0')}°T` },
     { leg: 7, hdg: hdg2, dist: r, turn: '120° STBD' },
     { leg: 8, hdg: hdg3, dist: r, turn: '120° STBD' },
-    { leg: 9, hdg: hdg1, dist: r, turn: 'Search complete', toDatum: true },
+    { leg: 9, toDatum: true, dist: r, turn: 'Search complete' },
   ];
 
   // Map geometry: three triangles, all vertices lie on the search circle at radius R
