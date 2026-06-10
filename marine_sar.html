@@ -2339,7 +2339,7 @@ function printSummaryPDF() {
   </style>
 </head><body>
 <pre>${escaped}</pre>
-<script>window.addEventListener('load', function() { window.print(); });<\/script>
+<script>window.addEventListener('load', function() { window.print(); window.close(); });<\/script>
 </body></html>`);
   win.document.close();
 }
