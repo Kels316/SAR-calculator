@@ -513,52 +513,29 @@
   .wp-coord { color: #fff; }
   .wp-note { color: var(--muted); font-size: 17px; }
 
-  /* ── LEG INSTRUCTIONS ── */
-  .leg-instructions-header {
-    font-family: var(--mono);
-    font-size: 11px;
-    letter-spacing: 2px;
-    color: var(--muted);
-    text-transform: uppercase;
-    padding: 8px 16px;
-    border-top: 1px solid var(--border);
-    background: rgba(0,0,0,0.2);
-  }
-  .leg-row {
-    display: grid;
-    grid-template-columns: 44px 1fr;
-    border-bottom: 1px solid rgba(30,45,66,0.6);
-    font-family: var(--mono);
-  }
-  .leg-row:last-child { border-bottom: none; }
-  .leg-num {
-    padding: 10px 0 10px 16px;
+  /* ── WAYPOINT NAV ── */
+  .wp-nav {
+    margin-top: 5px;
+    font-size: 15px;
     color: var(--accent);
-    font-size: 13px;
-    font-weight: bold;
-    align-self: start;
-    padding-top: 11px;
   }
-  .leg-detail { padding: 8px 16px 8px 0; }
-  .leg-from {
-    font-size: 13px;
-    color: var(--muted);
-    margin-bottom: 3px;
-  }
-  .leg-hdg {
-    font-size: 17px;
-    color: #fff;
-    margin-bottom: 2px;
-  }
-  .leg-hdg span { color: var(--accent); }
-  .leg-dist-time {
-    font-size: 13px;
-    color: var(--muted);
-    margin-bottom: 4px;
-  }
-  .leg-turn {
-    font-size: 13px;
+  .wp-nav strong { color: #fff; }
+  .wp-turn {
+    display: inline-block;
+    margin-top: 3px;
+    font-size: 14px;
     color: var(--accent2);
+  }
+  .wp-turn-end {
+    display: inline-block;
+    margin-top: 3px;
+    font-size: 14px;
+    color: var(--ok);
+  }
+  .wp-coord-dec {
+    font-size: 13px;
+    color: var(--muted);
+    margin-top: 2px;
   }
 
   /* ── POD BAR ── */
@@ -1384,10 +1361,6 @@
           </thead>
           <tbody id="wpBody"></tbody>
         </table>
-        <div id="legInstructions" style="display:none">
-          <div class="leg-instructions-header">LEG INSTRUCTIONS</div>
-          <div id="legBody"></div>
-        </div>
       </div>
 
       <!-- DRIFT BREAKDOWN -->
@@ -2232,62 +2205,42 @@ function calculate() {
   const tbody = document.getElementById('wpBody');
   tbody.innerHTML = '';
   const maxWp = 30;
-  pat.waypoints.slice(0, maxWp).forEach((wp, i) => {
-    const tr = document.createElement('tr');
-    tr.innerHTML = `
-      <td class="wp-num">WP${String(i+1).padStart(2,'0')}</td>
-      <td class="wp-coord">${formatLatLon(wp.lat, wp.lon)}</td>
-      <td class="wp-note">${wp.note}</td>`;
-    tbody.appendChild(tr);
-  });
-  if (pat.waypoints.length > maxWp) {
-    const tr = document.createElement('tr');
-    tr.innerHTML = `<td colspan="3" class="wp-note" style="padding:8px 16px; color:var(--muted)">
-      … ${pat.waypoints.length - maxWp} more waypoints not shown</td>`;
-    tbody.appendChild(tr);
-  }
-
-  // ── LEG INSTRUCTIONS ──────────────────────────────────────
-  const legDiv = document.getElementById('legInstructions');
-  const legBody = document.getElementById('legBody');
-  legBody.innerHTML = '';
   const wps = pat.waypoints;
-  if (wps.length >= 2) {
-    legDiv.style.display = 'block';
-    for (let i = 0; i < wps.length - 1; i++) {
-      const from = wps[i], to = wps[i + 1];
-      const hdg  = bearingDeg(from.lat, from.lon, to.lat, to.lon);
-      const dist = haversineNm(from.lat, from.lon, to.lat, to.lon);
+  wps.slice(0, maxWp).forEach((wp, i) => {
+    // Nav info for this leg (from this WP to the next)
+    let navHtml = '';
+    if (i < wps.length - 1) {
+      const next = wps[i + 1];
+      const hdg  = bearingDeg(wp.lat, wp.lon, next.lat, next.lon);
+      const dist = haversineNm(wp.lat, wp.lon, next.lat, next.lon);
       const mins = (dist / assetSpeed) * 60;
       const timeStr = mins < 60
         ? `${Math.round(mins)} min`
         : `${Math.floor(mins/60)}h ${Math.round(mins%60)}min`;
-
-      // Turn instruction
       let turnStr = '';
       if (i < wps.length - 2) {
-        const nextHdg = bearingDeg(to.lat, to.lon, wps[i+2].lat, wps[i+2].lon);
+        const nextHdg = bearingDeg(next.lat, next.lon, wps[i+2].lat, wps[i+2].lon);
         let delta = ((nextHdg - hdg) + 360) % 360;
         if (delta > 180) delta -= 360;
-        const absDelta = Math.abs(Math.round(delta));
         const dir = delta > 0 ? 'STBD' : 'PORT';
-        turnStr = `Turn ${dir} onto ${Math.round(nextHdg)}°T (${absDelta}°)`;
+        turnStr = `<span class="wp-turn">↱ Turn ${dir} → ${Math.round(nextHdg).toString().padStart(3,'0')}°T</span>`;
+      } else {
+        turnStr = `<span class="wp-turn-end">✓ Pattern complete</span>`;
       }
-
-      const row = document.createElement('div');
-      row.className = 'leg-row';
-      row.innerHTML = `
-        <div class="leg-num">L${i+1}</div>
-        <div class="leg-detail">
-          <div class="leg-from">From WP${String(i+1).padStart(2,'0')} — ${from.note}</div>
-          <div class="leg-hdg">Steer <span>${Math.round(hdg)}°T</span></div>
-          <div class="leg-dist-time">${dist.toFixed(2)} nm · ${timeStr} @ ${assetSpeed} kn</div>
-          ${turnStr ? `<div class="leg-turn">↱ ${turnStr}</div>` : '<div class="leg-turn" style="color:var(--ok)">✓ Pattern complete</div>'}
-        </div>`;
-      legBody.appendChild(row);
+      navHtml = `<div class="wp-nav">Steer <strong>${Math.round(hdg).toString().padStart(3,'0')}°T</strong> &nbsp;·&nbsp; ${dist.toFixed(2)} nm &nbsp;·&nbsp; ${timeStr}</div><div>${turnStr}</div>`;
     }
-  } else {
-    legDiv.style.display = 'none';
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+      <td class="wp-num">WP${String(i+1).padStart(2,'0')}</td>
+      <td class="wp-coord">${formatLatLon(wp.lat, wp.lon)}<div class="wp-coord-dec">${formatLatLonDec(wp.lat, wp.lon)}</div></td>
+      <td class="wp-note">${wp.note}${navHtml}</td>`;
+    tbody.appendChild(tr);
+  });
+  if (wps.length > maxWp) {
+    const tr = document.createElement('tr');
+    tr.innerHTML = `<td colspan="3" class="wp-note" style="padding:8px 16px; color:var(--muted)">
+      … ${wps.length - maxWp} more waypoints not shown</td>`;
+    tbody.appendChild(tr);
   }
 
   setEl('r_current', `${currentSpd.toFixed(2)} kn → ${currentDir.toFixed(0)}°T`);
