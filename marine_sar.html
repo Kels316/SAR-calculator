@@ -2331,7 +2331,7 @@ function calculate() {
 
   // Expanding square: bounding square aligns to wind direction; others align to drift
   const squareDir = (patType === 'expanding') ? windFrom : sd.dir;
-  updateMapPattern(lkpLat, lkpLon, datum, r, pat, patType, squareDir);
+  updateMapPattern(lkpLat, lkpLon, datum, r, pat, patType, squareDir, sd);
 
   document.getElementById('resultsPanel').scrollTop = 0;
 }
@@ -3091,6 +3091,7 @@ function drawTideChart(times, heights, canvas, extremes, nowIdx) {
 // ═══════════════════════════════════════════════════════════
 let _map, _lkpMarker, _datumMarker, _searchCircle, _patternLayers = [];
 let _lkpDebounce = null;
+let _driftControl = null;
 
 function initMap() {
   _map = L.map('sarMap', { zoomControl: true, attributionControl: true });
@@ -3102,6 +3103,19 @@ function initMap() {
   ).addTo(_map);
 
   _map.setView([0, 140], 3); // Default: Pacific Ocean
+
+  // Drift indicator control (top-right corner, hidden until calculate() runs)
+  const DriftControl = L.Control.extend({
+    options: { position: 'topright' },
+    onAdd() {
+      const div = L.DomUtil.create('div');
+      div.id = 'driftIndicator';
+      div.style.cssText = 'display:none';
+      return div;
+    }
+  });
+  _driftControl = new DriftControl();
+  _driftControl.addTo(_map);
 
   _lkpIcon = L.divIcon({
     className: '',
@@ -3175,7 +3189,7 @@ function updateMapLKP() {
   } catch(e) { /* incomplete input */ }
 }
 
-function updateMapPattern(lkpLat, lkpLon, datum, r, pat, patType, driftDir) {
+function updateMapPattern(lkpLat, lkpLon, datum, r, pat, patType, driftDir, sd) {
   if (!_map) return;
 
   // Clear old calculation layers
@@ -3183,6 +3197,34 @@ function updateMapPattern(lkpLat, lkpLon, datum, r, pat, patType, driftDir) {
   _patternLayers = [];
   if (_datumMarker) { _map.removeLayer(_datumMarker); _datumMarker = null; }
   if (_searchCircle) { _map.removeLayer(_searchCircle); _searchCircle = null; }
+
+  // Drift indicator (corner widget)
+  if (sd && _driftControl) {
+    const el = document.getElementById('driftIndicator');
+    if (el) {
+      const deg = Math.round(sd.dir);
+      el.style.cssText = `
+        background: rgba(10,14,20,0.82);
+        border: 1px solid rgba(255,255,255,0.15);
+        border-radius: 6px;
+        padding: 8px 10px 6px;
+        text-align: center;
+        min-width: 64px;
+        pointer-events: none;
+        margin: 8px;
+      `;
+      el.innerHTML = `
+        <svg width="36" height="44" viewBox="0 0 36 44" style="display:block;margin:0 auto 4px">
+          <g transform="rotate(${deg}, 18, 22)">
+            <line x1="18" y1="38" x2="18" y2="8" stroke="#e36414" stroke-width="2.5" stroke-linecap="round"/>
+            <polygon points="18,2 11,16 25,16" fill="#e36414"/>
+          </g>
+        </svg>
+        <div style="color:#e36414;font:600 11px/1.4 monospace;white-space:nowrap">${sd.spd.toFixed(2)} kn</div>
+        <div style="color:#e36414;font:600 11px/1.4 monospace;white-space:nowrap">${deg.toString().padStart(3,'0')}°T</div>
+      `;
+    }
+  }
 
   // Search area circle (always shown)
   _searchCircle = L.circle([datum.lat, datum.lon], {
