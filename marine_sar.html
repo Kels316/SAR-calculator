@@ -3209,15 +3209,12 @@ function updateMapPattern(lkpLat, lkpLon, datum, r, pat, patType, driftDir, sd) 
         margin: 8px;
       `;
       el.innerHTML = `
-        <svg width="40" height="52" viewBox="0 0 40 52" style="display:block;margin:0 auto 3px;filter:drop-shadow(0 1px 3px rgba(0,0,0,0.6))">
-          <g transform="rotate(${deg}, 20, 26)">
-            <polygon points="20,2 27,26 13,26" fill="#e36414"/>
-            <polygon points="20,50 27,26 13,26" fill="rgba(120,150,170,0.55)"/>
-            <circle cx="20" cy="26" r="3" fill="rgba(255,255,255,0.85)"/>
-          </g>
+        <svg width="28" height="28" viewBox="0 0 28 28" style="display:block;margin:0 auto 3px;transform:rotate(${deg}deg);filter:drop-shadow(0 1px 2px rgba(0,0,0,0.3))" xmlns="http://www.w3.org/2000/svg">
+          <polygon points="14,2 17,21 14,17 11,21" fill="#00b4d8"/>
+          <circle cx="14" cy="14" r="2.5" fill="#00b4d8" opacity="0.6"/>
         </svg>
-        <div style="color:#fff;font:700 11px/1.4 monospace;text-shadow:0 1px 3px rgba(0,0,0,0.8);white-space:nowrap">${sd.spd.toFixed(2)} kn</div>
-        <div style="color:#fff;font:700 11px/1.4 monospace;text-shadow:0 1px 3px rgba(0,0,0,0.8);white-space:nowrap">${deg.toString().padStart(3,'0')}°T</div>
+        <div style="color:#fff;font:700 11px/1.4 monospace;text-shadow:0 1px 3px rgba(0,0,0,0.9);white-space:nowrap">${sd.spd.toFixed(2)} kn</div>
+        <div style="color:#fff;font:700 11px/1.4 monospace;text-shadow:0 1px 3px rgba(0,0,0,0.9);white-space:nowrap">${deg.toString().padStart(3,'0')}°T</div>
       `;
     }
   }
