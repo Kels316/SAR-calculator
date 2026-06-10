@@ -2266,7 +2266,7 @@ function calculate() {
       html += `<tr>
         <td class="wp-num">L${leg.leg}</td>
         <td class="wp-coord">Steer <strong>${Math.round(leg.hdg).toString().padStart(3,'0')}°T</strong></td>
-        <td class="wp-note">${leg.dist.toFixed(2)} nm</td>
+        <td class="wp-note">${legTime}</td>
         <td class="wp-note ${turnClass}" style="${turnColor}">${isDatum ? '⬤' : '↱'} ${leg.turn}</td>
       </tr>`;
     }
@@ -2420,7 +2420,7 @@ function buildSummary(d) {
     lines.push('');
     lines.push(`── Sector Search — R = ${d.pat.r.toFixed(2)} nm · ${legTime} per leg @ ${d.assetSpeed} kn ──`);
     for (const leg of d.pat.sectorLegs) {
-      lines.push(`  L${leg.leg}  Steer ${Math.round(leg.hdg).toString().padStart(3,'0')}°T  ·  ${leg.dist.toFixed(2)} nm  →  ${leg.turn}`);
+      lines.push(`  L${leg.leg}  Steer ${Math.round(leg.hdg).toString().padStart(3,'0')}°T  ·  ${legTime}  →  ${leg.turn}`);
     }
   }
   lines.push('════════════════════════════════════════');
