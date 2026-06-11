@@ -1380,6 +1380,9 @@
         <div class="sector-leg-wrap" id="expandLegWrap" style="display:none">
           <table class="wp-table" id="expandLegTable"></table>
         </div>
+        <div class="sector-leg-wrap" id="trackLegWrap" style="display:none">
+          <table class="wp-table" id="trackLegTable"></table>
+        </div>
       </div>
 
       <!-- DRIFT BREAKDOWN -->
@@ -2062,12 +2065,58 @@ function patternCreeping(dLat, dLon, W, S, area, r, driftDir) {
 }
 
 function patternTrackLine(dLat, dLon, W, S, area, r, driftDir, trackLen, trackHdg) {
-  const end = destinationPoint(dLat, dLon, trackHdg, trackLen);
-  const wps = [
-    { lat: dLat,    lon: dLon,    note: `Track start  hdg ${trackHdg.toFixed(0)}°T` },
-    { lat: end.lat, lon: end.lon, note: 'Track end' },
+  // Three-pass track line search. Start at LKP (passed as dLat/dLon).
+  // Each main leg extends S/2 past the end of the missing vessel track so
+  // turns happen clear of the track endpoints.
+  //
+  // Leg 1 : track_hdg         for trackLen + S/2        (LKP → past far end)
+  // Cross1: track_hdg + 90°   for S/2
+  // Leg 2 : track_hdg + 180°  for trackLen + S          (past far end → S/2 past LKP)
+  // Cross2: track_hdg + 270°  for S
+  // Leg 3 : track_hdg         for trackLen + S          (S/2 past LKP → past far end)
+  //
+  // All turns are 90° STBD.
+
+  const h0 = trackHdg;
+  const h1 = (trackHdg + 90)  % 360;
+  const h2 = (trackHdg + 180) % 360;
+  const h3 = (trackHdg + 270) % 360;
+
+  const legMain1 = trackLen + S / 2;
+  const legCross1 = S / 2;
+  const legMain2 = trackLen + S;
+  const legCross2 = S;
+  const legMain3 = trackLen + S;
+
+  const wp0 = { lat: dLat, lon: dLon };
+  const wp1 = destinationPoint(wp0.lat, wp0.lon, h0, legMain1);
+  const wp2 = destinationPoint(wp1.lat, wp1.lon, h1, legCross1);
+  const wp3 = destinationPoint(wp2.lat, wp2.lon, h2, legMain2);
+  const wp4 = destinationPoint(wp3.lat, wp3.lon, h3, legCross2);
+  const wp5 = destinationPoint(wp4.lat, wp4.lon, h0, legMain3);
+
+  const trackLegs = [
+    { leg: 1, type: 'main',  hdg: h0, dist: legMain1,  turn: '90° STBD' },
+    { leg: 2, type: 'cross', hdg: h1, dist: legCross1, turn: '90° STBD' },
+    { leg: 3, type: 'main',  hdg: h2, dist: legMain2,  turn: '90° STBD' },
+    { leg: 4, type: 'cross', hdg: h3, dist: legCross2, turn: '90° STBD' },
+    { leg: 5, type: 'main',  hdg: h0, dist: legMain3,  turn: 'Search complete' },
   ];
-  return { total: trackLen, startLat: dLat, startLon: dLon, waypoints: wps };
+
+  const total = legMain1 + legCross1 + legMain2 + legCross2 + legMain3;
+  const mapCoords = [wp0, wp1, wp2, wp3, wp4, wp5].map(p => [p.lat, p.lon]);
+
+  return {
+    total,
+    startLat: dLat, startLon: dLon,
+    waypoints: [{ lat: dLat, lon: dLon,
+      note: `LKP — track ${Math.round(h0).toString().padStart(3,'0')}°T for ${trackLen.toFixed(1)} nm` }],
+    trackLegs,
+    mapCoords,
+    S,
+    trackHdg: h0,
+    trackLen,
+  };
 }
 
 // ═══════════════════════════════════════════════════════════
@@ -2183,7 +2232,8 @@ function calculate() {
   else {
     const tl  = getFloat('track_len', 20);
     const th  = getFloat('track_hdg', 0);
-    pat = patternTrackLine(datum.lat, datum.lon, W, S, area, r, sd.dir, tl, th);
+    // Track line search starts at LKP — no drift calculation applies
+    pat = patternTrackLine(lkpLat, lkpLon, W, S, area, r, sd.dir, tl, th);
   }
 
   const Z       = pat.total;
@@ -2230,7 +2280,7 @@ function calculate() {
   // Render datum row(s)
   wps.slice(0, maxWp).forEach((wp, i) => {
     let navHtml = '';
-    if (!pat.sectorLegs && !pat.expandingLegs && i < wps.length - 1) {
+    if (!pat.sectorLegs && !pat.expandingLegs && !pat.trackLegs && i < wps.length - 1) {
       const next = wps[i + 1];
       const hdg  = bearingDeg(wp.lat, wp.lon, next.lat, next.lon);
       const dist = haversineNm(wp.lat, wp.lon, next.lat, next.lon);
@@ -2316,6 +2366,34 @@ function calculate() {
     expandWrap.style.display = '';
   } else {
     expandWrap.style.display = 'none';
+  }
+
+  // Track line: render leg instruction table
+  const trackTable = document.getElementById('trackLegTable');
+  const trackWrap  = document.getElementById('trackLegWrap');
+  if (pat.trackLegs) {
+    const hdgStr = Math.round(pat.trackHdg).toString().padStart(3, '0');
+    let html = `<tr class="sector-sweep-header">
+      <td colspan="4">Track ${hdgStr}°T · ${pat.trackLen.toFixed(1)} nm · S = ${pat.S.toFixed(2)} nm @ ${assetSpeed} kn</td>
+    </tr>`;
+    for (const leg of pat.trackLegs) {
+      const legMins = (leg.dist / assetSpeed) * 60;
+      const legTime = legMins < 60 ? `${Math.round(legMins)} min` : `${Math.floor(legMins/60)}h ${Math.round(legMins%60)}min`;
+      const isComplete = leg.turn === 'Search complete';
+      const isCross    = leg.type === 'cross';
+      const turnClass  = isComplete ? 'sector-complete' : 'sector-turn';
+      const rowStyle   = isCross ? 'color:var(--muted)' : '';
+      html += `<tr style="${rowStyle}">
+        <td class="wp-num">L${leg.leg}</td>
+        <td class="wp-coord">Steer <strong>${Math.round(leg.hdg).toString().padStart(3,'0')}°T</strong></td>
+        <td class="wp-note">${legTime}</td>
+        <td class="wp-note ${turnClass}">↱ ${leg.turn}</td>
+      </tr>`;
+    }
+    trackTable.innerHTML = html;
+    trackWrap.style.display = '';
+  } else {
+    trackWrap.style.display = 'none';
   }
 
   setEl('r_current', `${currentSpd.toFixed(2)} kn → ${currentDir.toFixed(0)}°T`);
@@ -2434,7 +2512,7 @@ function buildSummary(d) {
   const wps = d.pat.waypoints;
   wps.forEach((wp, i) => {
     lines.push(`  WP${String(i+1).padStart(2,'0')}  ${formatLatLon(wp.lat, wp.lon)}   ${wp.note}`);
-    if (!d.pat.sectorLegs && !d.pat.expandingLegs && i < wps.length - 1) {
+    if (!d.pat.sectorLegs && !d.pat.expandingLegs && !d.pat.trackLegs && i < wps.length - 1) {
       const next = wps[i + 1];
       const hdg  = bearingDeg(wp.lat, wp.lon, next.lat, next.lon);
       const dist = haversineNm(wp.lat, wp.lon, next.lat, next.lon);
@@ -2470,6 +2548,16 @@ function buildSummary(d) {
     lines.push('');
     lines.push(`── Expanding Square — N=${d.pat.N} legs, R=${d.pat.rUsed}nm S=${d.pat.sUsed}nm @ ${d.assetSpeed} kn ──`);
     for (const leg of d.pat.expandingLegs) {
+      const legMins = (leg.dist / d.assetSpeed) * 60;
+      const legTime = legMins < 60 ? `${Math.round(legMins)} min` : `${Math.floor(legMins/60)}h ${Math.round(legMins%60)}min`;
+      lines.push(`  L${leg.leg}  Steer ${Math.round(leg.hdg).toString().padStart(3,'0')}°T  ·  ${legTime}  →  ${leg.turn}`);
+    }
+  }
+  if (d.pat.trackLegs) {
+    const hdgStr = Math.round(d.pat.trackHdg).toString().padStart(3, '0');
+    lines.push('');
+    lines.push(`── Track Line Search — ${hdgStr}°T · ${d.pat.trackLen.toFixed(1)} nm · S=${d.pat.S.toFixed(2)} nm @ ${d.assetSpeed} kn ──`);
+    for (const leg of d.pat.trackLegs) {
       const legMins = (leg.dist / d.assetSpeed) * 60;
       const legTime = legMins < 60 ? `${Math.round(legMins)} min` : `${Math.floor(legMins/60)}h ${Math.round(legMins%60)}min`;
       lines.push(`  L${leg.leg}  Steer ${Math.round(leg.hdg).toString().padStart(3,'0')}°T  ·  ${legTime}  →  ${leg.turn}`);
@@ -3220,13 +3308,15 @@ function updateMapPattern(lkpLat, lkpLon, datum, r, pat, patType, driftDir, sd) 
     }
   }
 
-  // Search area circle (always shown)
-  _searchCircle = L.circle([datum.lat, datum.lon], {
-    radius: r * 1852,
-    color: '#f77f00', weight: 1.5,
-    fillColor: '#f77f00', fillOpacity: 0.08
-  }).addTo(_map);
-  _patternLayers.push(_searchCircle);
+  // Search area circle (not shown for track line — no datum, no fixed search radius)
+  if (patType !== 'trackline') {
+    _searchCircle = L.circle([datum.lat, datum.lon], {
+      radius: r * 1852,
+      color: '#f77f00', weight: 1.5,
+      fillColor: '#f77f00', fillOpacity: 0.08
+    }).addTo(_map);
+    _patternLayers.push(_searchCircle);
+  }
 
   // For square-pattern types, also draw the dotted bounding square
   const squarePatterns = ['parallel', 'expanding', 'creeping'];
@@ -3263,16 +3353,17 @@ function updateMapPattern(lkpLat, lkpLon, datum, r, pat, patType, driftDir, sd) 
     _patternLayers.push(route);
   }
 
-  // Datum marker (on top)
-  _datumMarker = L.circleMarker([datum.lat, datum.lon], {
-    color: '#fff', fillColor: '#00b4d8', fillOpacity: 1,
-    radius: 9, weight: 2
-  }).addTo(_map).bindTooltip('DATUM', { permanent: true, direction: 'top' });
+  // Datum marker (not shown for track line — search starts at LKP)
+  if (patType !== 'trackline') {
+    _datumMarker = L.circleMarker([datum.lat, datum.lon], {
+      color: '#fff', fillColor: '#00b4d8', fillOpacity: 1,
+      radius: 9, weight: 2
+    }).addTo(_map).bindTooltip('DATUM', { permanent: true, direction: 'top' });
+  }
 
   // Fit to all relevant points
   const bounds = L.latLngBounds([
     [lkpLat, lkpLon],
-    [datum.lat, datum.lon],
     ...coords
   ]);
   _map.fitBounds(bounds, { padding: [20, 20] });
