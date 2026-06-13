@@ -3185,8 +3185,9 @@ function drawTideChart(times, heights, canvas, extremes, nowIdx) {
 let _map, _lkpMarker, _datumMarker, _searchCircle, _patternLayers = [];
 let _lkpDebounce = null;
 let _driftControl = null;
-let _aisLayers   = [];
-let _aisVisible  = false;
+let _aisLayers    = [];
+let _aisMarkerMap = new Map(); // mmsi → Leaflet marker
+let _aisVisible   = false;
 
 const AIS_NAV_STATUS = {
   0: 'Underway (engine)', 1: 'At anchor', 2: 'Not under command',
@@ -3432,7 +3433,12 @@ function _setAISBtn(state, count) {
     btn.style.color = '#5a7080';
     btn.style.borderColor = '#2a3a4a';
   } else if (state === 'loading') {
-    btn.textContent = 'AIS 20s…';
+    btn.textContent = 'AIS…';
+    btn.style.color = 'var(--accent)';
+    btn.style.borderColor = 'var(--accent)';
+  } else if (state === 'scanning') {
+    // count is (pass, vessels) here
+    btn.textContent = `AIS ${count}… (${arguments[2]})`;
     btn.style.color = 'var(--accent)';
     btn.style.borderColor = 'var(--accent)';
   } else {
@@ -3444,18 +3450,18 @@ function _setAISBtn(state, count) {
 
 function _clearAISLayers() {
   _aisLayers.forEach(l => _map && _map.removeLayer(l));
-  _aisLayers = [];
+  _aisLayers    = [];
+  _aisMarkerMap = new Map();
 }
 
 async function fetchAIS() {
   if (!AIS_WORKER_URL || !_map) return;
 
-  // Use last calculated LKP + radius, or fall back to form inputs
   let lat, lon, r;
   if (lastCalc) {
     lat = lastCalc.lkpLat;
     lon = lastCalc.lkpLon;
-    r   = Math.max(lastCalc.r, 25);  // minimum 25nm for useful AIS coverage
+    r   = Math.max(lastCalc.r, 25);
   } else {
     try {
       lat = parseLatLon(document.getElementById('lkp_lat').value);
@@ -3468,48 +3474,77 @@ async function fetchAIS() {
   _setAISBtn('loading');
   _clearAISLayers();
 
+  const PASSES = 3; // 3 × 25s = 75s total; catches anchored vessels (3-min cycle)
   try {
-    const res = await fetch(`${AIS_WORKER_URL}?lat=${lat}&lon=${lon}&r=${r}`);
-    if (!res.ok) throw new Error(res.status);
-    const raw = await res.json();
-    const vessels = Array.isArray(raw) ? raw : (raw.vessels ?? []);
+    for (let pass = 1; pass <= PASSES; pass++) {
+      const res = await fetch(`${AIS_WORKER_URL}?lat=${lat}&lon=${lon}&r=${r}`);
+      if (!res.ok) throw new Error(res.status);
 
-    for (const v of vessels) {
-      if (!v.lat || !v.lon) continue;
-      const deg   = (v.heading != null && v.heading < 360) ? v.heading : (v.cog ?? 0);
-      const color = _aisColor(v.status);
+      const reader  = res.body.getReader();
+      const decoder = new TextDecoder();
+      let   buffer  = '';
 
-      const icon = L.divIcon({
-        className: '',
-        html: `<svg width="22" height="22" viewBox="0 0 28 28" style="transform:rotate(${deg}deg);filter:drop-shadow(0 1px 2px rgba(0,0,0,0.5))" xmlns="http://www.w3.org/2000/svg">
-          <polygon points="14,2 17,21 14,17 11,21" fill="${color}"/>
-          <circle cx="14" cy="14" r="2.5" fill="${color}" opacity="0.6"/>
-        </svg>`,
-        iconSize: [22, 22],
-        iconAnchor: [11, 11],
-      });
-
-      const statusStr = AIS_NAV_STATUS[v.status] ?? `Status ${v.status}`;
-      const popup = `<div style="font:13px/1.6 monospace;min-width:160px">
-        <strong style="font-size:14px">${v.name}</strong><br>
-        MMSI: ${v.mmsi}<br>
-        SOG: ${(v.sog ?? 0).toFixed(1)} kn &nbsp;·&nbsp; COG: ${Math.round(v.cog ?? 0)}°T<br>
-        ${v.dest ? `Dest: ${v.dest}<br>` : ''}
-        ${statusStr}
-      </div>`;
-
-      const marker = L.marker([v.lat, v.lon], { icon })
-        .bindPopup(popup, { maxWidth: 240 })
-        .addTo(_map);
-      _aisLayers.push(marker);
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split('\n');
+        buffer = lines.pop();
+        for (const line of lines) {
+          if (!line.trim()) continue;
+          try {
+            const v = JSON.parse(line);
+            _addOrUpdateAISVessel(v);
+          } catch (_) {}
+        }
+        _setAISBtn('scanning', pass, _aisMarkerMap.size);
+      }
     }
 
     _aisVisible = true;
-    _setAISBtn('on', _aisLayers.length);
+    _setAISBtn('on', _aisMarkerMap.size);
 
   } catch(e) {
     console.warn('AIS fetch failed:', e);
-    _setAISBtn('off');
+    if (_aisMarkerMap.size > 0) {
+      _aisVisible = true;
+      _setAISBtn('on', _aisMarkerMap.size); // keep whatever we got
+    } else {
+      _setAISBtn('off');
+    }
+  }
+}
+
+function _addOrUpdateAISVessel(v) {
+  if (!v.lat || !v.lon) return;
+  const deg      = (v.heading != null && v.heading < 360) ? v.heading : (v.cog ?? 0);
+  const color    = _aisColor(v.status);
+  const statusStr = AIS_NAV_STATUS[v.status] ?? `Status ${v.status}`;
+
+  const svgHtml = `<svg width="22" height="22" viewBox="0 0 28 28" style="transform:rotate(${deg}deg);filter:drop-shadow(0 1px 2px rgba(0,0,0,0.5))" xmlns="http://www.w3.org/2000/svg">
+    <polygon points="14,2 17,21 14,17 11,21" fill="${color}"/>
+    <circle cx="14" cy="14" r="2.5" fill="${color}" opacity="0.6"/>
+  </svg>`;
+
+  const popup = `<div style="font:13px/1.6 monospace;min-width:160px">
+    <strong style="font-size:14px">${v.name}</strong><br>
+    MMSI: ${v.mmsi}<br>
+    SOG: ${(v.sog ?? 0).toFixed(1)} kn &nbsp;·&nbsp; COG: ${Math.round(v.cog ?? 0)}°T<br>
+    ${v.dest ? `Dest: ${v.dest}<br>` : ''}
+    ${statusStr}
+  </div>`;
+
+  if (_aisMarkerMap.has(v.mmsi)) {
+    const marker = _aisMarkerMap.get(v.mmsi);
+    marker.setLatLng([v.lat, v.lon]);
+    marker.setIcon(L.divIcon({ className: '', html: svgHtml, iconSize: [22, 22], iconAnchor: [11, 11] }));
+    marker.setPopupContent(popup);
+  } else {
+    const marker = L.marker([v.lat, v.lon], {
+      icon: L.divIcon({ className: '', html: svgHtml, iconSize: [22, 22], iconAnchor: [11, 11] }),
+    }).bindPopup(popup, { maxWidth: 240 }).addTo(_map);
+    _aisLayers.push(marker);
+    _aisMarkerMap.set(v.mmsi, marker);
   }
 }
 
