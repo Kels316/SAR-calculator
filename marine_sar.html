@@ -3455,13 +3455,13 @@ async function fetchAIS() {
   if (lastCalc) {
     lat = lastCalc.lkpLat;
     lon = lastCalc.lkpLon;
-    r   = Math.max(lastCalc.r, 5);   // minimum 5nm for useful AIS coverage
+    r   = Math.max(lastCalc.r, 25);  // minimum 25nm for useful AIS coverage
   } else {
     try {
       lat = parseLatLon(document.getElementById('lkp_lat').value);
       lon = parseLatLon(document.getElementById('lkp_lon').value);
     } catch(_) { return; }
-    r = 10;
+    r = 25;
   }
   if (isNaN(lat) || isNaN(lon)) return;
 

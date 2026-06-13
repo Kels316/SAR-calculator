@@ -49,8 +49,8 @@ export default {
       let resolved = false;
       const finish = () => { if (!resolved) { resolved = true; ws.close(); resolve(); } };
 
-      // Collect for 3 seconds then return
-      const timer = setTimeout(finish, 3000);
+      // Collect for 8 seconds then return
+      const timer = setTimeout(finish, 8000);
 
       ws.addEventListener('open', () => {
         ws.send(JSON.stringify({
