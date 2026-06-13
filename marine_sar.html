@@ -3471,7 +3471,8 @@ async function fetchAIS() {
   try {
     const res = await fetch(`${AIS_WORKER_URL}?lat=${lat}&lon=${lon}&r=${r}`);
     if (!res.ok) throw new Error(res.status);
-    const vessels = await res.json();
+    const raw = await res.json();
+    const vessels = Array.isArray(raw) ? raw : (raw.vessels ?? []);
 
     for (const v of vessels) {
       if (!v.lat || !v.lon) continue;
