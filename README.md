@@ -23,6 +23,7 @@ A browser-based Search and Rescue planning tool based on the Australian National
 - **Tide chart** — official tidal predictions for the nearest coastal bar to the LKP, drawn from a local database built directly from the Australian National Tide Tables (ANTT) 2026
 - **Interactive map** — tap to place a draggable LKP pin, or type coordinates; map shows LKP, search area circle, dotted bounding square (oriented to pattern direction), and calculated search pattern
 - **Responsive layout** — works on desktop and tablet; portrait tablet (≤768px) stacks panels into a single scrollable column so the tide chart is always reachable
+- **AIS overlay** — toggle live nearby vessel positions onto the map via an aisstream.io Cloudflare Worker proxy; vessels colour-coded by nav status with popup showing name, MMSI, SOG, COG, and destination
 - **Waypoint export** — GPX and KML export for upload to Google Earth or GPS devices
 - **BOM marine warnings** — fetches active marine weather warnings for the LKP from the Bureau of Meteorology, displayed in the live conditions panel with GMDSS severity colour-coding (strong wind / gale / storm force / hurricane force)
 - **Print / Save PDF** — generates a clean monospace SAR plan summary (incident, drift, datum, search parameters, live conditions, tide HW/LW, active warnings with full text, waypoints) and opens the browser print dialog
@@ -113,6 +114,7 @@ Open `marine_sar.html` in any modern browser — no server or installation requi
 | `tide-db.js` | Pre-built tide database (640 stations, ANTT 2026) |
 | `build_tide_db.py` | Rebuilds `tide-db.js` from an ANTT PDF |
 | `check-tides.mjs` | CLI tool to inspect tide DB entries for a named bar |
+| `ais-worker.js` | Cloudflare Worker proxy for aisstream.io AIS data |
 
 ---
 
@@ -126,3 +128,4 @@ Open `marine_sar.html` in any modern browser — no server or installation requi
 - Australian National Tide Tables 2026, Australian Hydrographic Office (AHO) — [hydro.gov.au](https://www.hydro.gov.au)
   - AHP11 — Secondary port calculation method
 - Open-Meteo Marine & Forecast APIs — [docs](https://open-meteo.com/en/docs/marine-weather-api)
+- aisstream.io — WebSocket AIS data stream (requires free API key; accessed via Cloudflare Worker proxy)

@@ -902,17 +902,17 @@
       width: 100%;
       overflow-y: visible;
       padding: 12px 14px;
-      order: 1;  /* results below map on mobile */
+      order: 2;
     }
 
-    /* Right column: full width, auto height — stacks above results and scrolls with page */
+    /* Right column: full width, auto height — sits above results on mobile */
     .right-column {
       flex: 0 0 auto;
       width: 100%;
       height: auto;
       overflow: visible;
       padding: 12px 14px;
-      order: 0;
+      order: 1;
     }
 
     .map-inset    { flex: 0 0 auto; height: 200px; }
@@ -1412,6 +1412,11 @@
 </div><!-- /app -->
 
 <script>
+// ── AIS PROXY ────────────────────────────────────────────────
+// Set this to your Cloudflare Worker URL once deployed.
+// Leave empty to hide the AIS toggle entirely.
+const AIS_WORKER_URL = 'https://little-sunset-799e.shy-crew0609.workers.dev';
+
 // ═══════════════════════════════════════════════════════════
 // GEODETIC & MATH ENGINE
 // ═══════════════════════════════════════════════════════════
@@ -3180,6 +3185,20 @@ function drawTideChart(times, heights, canvas, extremes, nowIdx) {
 let _map, _lkpMarker, _datumMarker, _searchCircle, _patternLayers = [];
 let _lkpDebounce = null;
 let _driftControl = null;
+let _aisLayers   = [];
+let _aisVisible  = false;
+
+const AIS_NAV_STATUS = {
+  0: 'Underway (engine)', 1: 'At anchor', 2: 'Not under command',
+  3: 'Restricted manoeuvrability', 5: 'Moored', 7: 'Fishing',
+  8: 'Underway (sailing)', 15: 'Unknown',
+};
+function _aisColor(status) {
+  if (status === 1 || status === 5) return '#5a7080';  // anchored / moored
+  if (status === 2 || status === 3) return '#f77f00';  // NUC / restricted
+  if (status === 0 || status === 8) return '#2ec4b6';  // underway
+  return '#aab4c0';
+}
 
 function initMap() {
   _map = L.map('sarMap', { zoomControl: true, attributionControl: true });
@@ -3204,6 +3223,36 @@ function initMap() {
   });
   _driftControl = new DriftControl();
   _driftControl.addTo(_map);
+
+  // AIS toggle — only added when a Worker URL is configured
+  if (AIS_WORKER_URL) {
+    const AISControl = L.Control.extend({
+      options: { position: 'bottomright' },
+      onAdd() {
+        const btn = L.DomUtil.create('button');
+        btn.id = 'aisToggleBtn';
+        btn.textContent = 'AIS';
+        btn.title = 'Toggle AIS vessel layer';
+        btn.style.cssText = `
+          background: rgba(10,14,20,0.85);
+          border: 1px solid #2a3a4a;
+          border-radius: 4px;
+          color: #5a7080;
+          font: 700 11px/1 monospace;
+          letter-spacing: 1px;
+          padding: 6px 10px;
+          cursor: pointer;
+          margin: 0 8px 8px 0;
+          white-space: nowrap;
+          display: block;
+        `;
+        L.DomEvent.disableClickPropagation(btn);
+        L.DomEvent.on(btn, 'click', toggleAIS);
+        return btn;
+      }
+    });
+    new AISControl().addTo(_map);
+  }
 
   _lkpIcon = L.divIcon({
     className: '',
@@ -3367,6 +3416,112 @@ function updateMapPattern(lkpLat, lkpLon, datum, r, pat, patType, driftDir, sd) 
     ...coords
   ]);
   _map.fitBounds(bounds, { padding: [20, 20] });
+}
+
+// ═══════════════════════════════════════════════════════════
+// AIS
+// ═══════════════════════════════════════════════════════════
+
+function _aisBtn() { return document.getElementById('aisToggleBtn'); }
+
+function _setAISBtn(state, count) {
+  const btn = _aisBtn();
+  if (!btn) return;
+  if (state === 'off') {
+    btn.textContent = 'AIS';
+    btn.style.color = '#5a7080';
+    btn.style.borderColor = '#2a3a4a';
+  } else if (state === 'loading') {
+    btn.textContent = 'AIS…';
+    btn.style.color = 'var(--accent)';
+    btn.style.borderColor = 'var(--accent)';
+  } else {
+    btn.textContent = `AIS  ●  ${count}`;
+    btn.style.color = '#2ec4b6';
+    btn.style.borderColor = '#2ec4b6';
+  }
+}
+
+function _clearAISLayers() {
+  _aisLayers.forEach(l => _map && _map.removeLayer(l));
+  _aisLayers = [];
+}
+
+async function fetchAIS() {
+  if (!AIS_WORKER_URL || !_map) return;
+
+  // Use last calculated LKP + radius, or fall back to form inputs
+  let lat, lon, r;
+  if (lastCalc) {
+    lat = lastCalc.lkpLat;
+    lon = lastCalc.lkpLon;
+    r   = Math.max(lastCalc.r, 5);   // minimum 5nm for useful AIS coverage
+  } else {
+    try {
+      lat = parseLatLon(document.getElementById('lkp_lat').value);
+      lon = parseLatLon(document.getElementById('lkp_lon').value);
+    } catch(_) { return; }
+    r = 10;
+  }
+  if (isNaN(lat) || isNaN(lon)) return;
+
+  _setAISBtn('loading');
+  _clearAISLayers();
+
+  try {
+    const res = await fetch(`${AIS_WORKER_URL}?lat=${lat}&lon=${lon}&r=${r}`);
+    if (!res.ok) throw new Error(res.status);
+    const vessels = await res.json();
+
+    for (const v of vessels) {
+      if (!v.lat || !v.lon) continue;
+      const deg   = (v.heading != null && v.heading < 360) ? v.heading : (v.cog ?? 0);
+      const color = _aisColor(v.status);
+
+      const icon = L.divIcon({
+        className: '',
+        html: `<svg width="22" height="22" viewBox="0 0 28 28" style="transform:rotate(${deg}deg);filter:drop-shadow(0 1px 2px rgba(0,0,0,0.5))" xmlns="http://www.w3.org/2000/svg">
+          <polygon points="14,2 17,21 14,17 11,21" fill="${color}"/>
+          <circle cx="14" cy="14" r="2.5" fill="${color}" opacity="0.6"/>
+        </svg>`,
+        iconSize: [22, 22],
+        iconAnchor: [11, 11],
+      });
+
+      const statusStr = AIS_NAV_STATUS[v.status] ?? `Status ${v.status}`;
+      const popup = `<div style="font:13px/1.6 monospace;min-width:160px">
+        <strong style="font-size:14px">${v.name}</strong><br>
+        MMSI: ${v.mmsi}<br>
+        SOG: ${(v.sog ?? 0).toFixed(1)} kn &nbsp;·&nbsp; COG: ${Math.round(v.cog ?? 0)}°T<br>
+        ${v.dest ? `Dest: ${v.dest}<br>` : ''}
+        ${statusStr}
+      </div>`;
+
+      const marker = L.marker([v.lat, v.lon], { icon })
+        .bindPopup(popup, { maxWidth: 240 })
+        .addTo(_map);
+      _aisLayers.push(marker);
+    }
+
+    _aisVisible = true;
+    _setAISBtn('on', _aisLayers.length);
+
+  } catch(e) {
+    console.warn('AIS fetch failed:', e);
+    _setAISBtn('off');
+  }
+}
+
+function toggleAIS() {
+  if (_aisVisible) {
+    // Hide
+    _aisLayers.forEach(l => _map.removeLayer(l));
+    _aisVisible = false;
+    _setAISBtn('off');
+  } else {
+    // Show — fetch fresh data
+    fetchAIS();
+  }
 }
 
 document.addEventListener('DOMContentLoaded', () => {
