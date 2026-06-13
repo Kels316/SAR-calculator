@@ -63,7 +63,7 @@ export default {
             resolve();
           }
         };
-        const timer = setTimeout(finish, 8000);
+        const timer = setTimeout(finish, 20000);
 
         // Send subscription only after connection is open
         ws.addEventListener('open', () => {
