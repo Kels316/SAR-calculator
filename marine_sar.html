@@ -641,8 +641,8 @@
   /* ── MAP INSET ── */
   .map-inset {
     position: relative;
-    flex: 0 0 30vh;
-    min-height: 160px;
+    flex: 0 0 45vh;
+    min-height: 220px;
     border: 1px solid var(--border);
     border-radius: 4px;
     overflow: hidden;
@@ -877,12 +877,14 @@
     html, body { overflow-y: auto; }
 
     .app {
-      display: block;
+      display: flex;
+      flex-direction: column;
       height: auto;
     }
 
     /* Inputs: full width, scrolls with page */
     .inputs-panel {
+      order: 2;
       width: 100%;
       height: auto;
       border-right: none;
@@ -892,6 +894,7 @@
 
     /* Results: full width, switch to column stack */
     .results-panel {
+      order: 1;
       flex-direction: column;
       height: auto;
       overflow-y: visible;
@@ -3213,6 +3216,14 @@ function initMap() {
   ).addTo(_map);
 
   _map.setView([0, 140], 3); // Default: Pacific Ocean
+
+  // Zoom to user's region on load
+  if (navigator.geolocation) {
+    navigator.geolocation.getCurrentPosition(
+      pos => { _map.setView([pos.coords.latitude, pos.coords.longitude], 8); },
+      () => { _map.setView([-26.65, 153.07], 9); } // fallback: Sunshine Coast, QLD
+    );
+  }
 
   // Drift indicator control (top-right corner, hidden until calculate() runs)
   const DriftControl = L.Control.extend({
