@@ -3318,7 +3318,7 @@ let _magVarManual = false;
 
 function onMagVarInput() {
   _magVarManual = true;
-  document.getElementById('mag_var_status').innerHTML = '<a href="#" onclick="resetMagVar();return false" style="color:var(--muted);font-size:0.9em">✎ manual — reset to WMM</a>');
+  document.getElementById('mag_var_status').innerHTML = '<a href="#" onclick="resetMagVar();return false" style="color:var(--muted);font-size:0.9em">✎ manual — reset to WMM</a>';
 }
 
 function resetMagVar() {
@@ -3335,7 +3335,7 @@ async function fetchWMMDeclination() {
   } catch(e) { return; }
   if (isNaN(lat) || isNaN(lon) || !isFinite(lat) || !isFinite(lon)) return;
 
-  document.getElementById('mag_var_status').innerHTML = '<span style="color:var(--muted)">⟳ fetching WMM…</span>');
+  document.getElementById('mag_var_status').innerHTML = '<span style="color:var(--muted)">⟳ fetching WMM…</span>';
 
   const now = new Date();
   const url = `https://www.ngdc.noaa.gov/geomag-web/calculators/calculateDeclination?lat1=${lat.toFixed(4)}&lon1=${lon.toFixed(4)}&key=zNEw7&startYear=${now.getFullYear()}&startMonth=${now.getMonth()+1}&startDay=${now.getDate()}&resultFormat=json`;
@@ -3346,13 +3346,13 @@ async function fetchWMMDeclination() {
     const data = await resp.json();
     const decl = data?.result?.[0]?.declination;
     if (decl === undefined || decl === null) throw new Error('no declination in response');
-    if (_magVarManual) return; // user may have typed while we were fetching
+    if (_magVarManual) return;
     const rounded = Math.round(decl * 10) / 10;
     document.getElementById('mag_var').value = rounded;
     const dir = rounded >= 0 ? `${rounded}°E` : `${Math.abs(rounded)}°W`;
-    document.getElementById('mag_var_status').innerHTML = `<span style="color:var(--ok)">✓ WMM (${dir})</span>`);
+    document.getElementById('mag_var_status').innerHTML = `<span style="color:var(--ok)">✓ WMM (${dir})</span>`;
   } catch(e) {
-    document.getElementById('mag_var_status').innerHTML = '<span style="color:var(--warn,#e6a817)">WMM unavailable — enter manually</span>');
+    document.getElementById('mag_var_status').innerHTML = '<span style="color:var(--warn,#e6a817)">WMM unavailable — enter manually</span>';
   }
 }
 
