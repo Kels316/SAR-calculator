@@ -1810,16 +1810,12 @@ function aussarPOD(C) {
 function patternParallel(dLat, dLon, W, S, area, r, driftDir) {
   // Search area: square with sides tangential to circle of radius r (side = 2r).
   // Pattern fills that square with S/2 inset on all four sides.
-  // Track length = 2r - S;  nTrk = round(2r / S);  across span = nTrk * S centred on datum.
   const side      = 2 * r - S;
   const nTrk      = Math.max(1, Math.round(2 * r / S));
   const trackHdg  = driftDir % 360;
   const acrossHdg = (driftDir + 90) % 360;
 
   // CSP: S/2 inset from back-left corner of the square.
-  // Step 1: move r opposite acrossHdg (to left square edge).
-  // Step 2: move side/2 = (r - S/2) opposite trackHdg (to back square edge, S/2 inset).
-  // Step 3: move S/2 in acrossHdg (S/2 inset from left edge). No extra track offset needed.
   let p = destinationPoint(dLat, dLon, (acrossHdg+180)%360, r);
   p     = destinationPoint(p.lat, p.lon,  (trackHdg+180)%360,  side / 2);
   p     = destinationPoint(p.lat, p.lon,  acrossHdg,           S / 2);
@@ -1827,25 +1823,23 @@ function patternParallel(dLat, dLon, W, S, area, r, driftDir) {
   const wps = [];
   let cur = p, hdg = trackHdg, total = 0;
 
+  // Start of the first track
+  wps.push({ lat: cur.lat, lon: cur.lon, note: `Track 1 — hdg ${hdg.toFixed(0)}°T` });
+
   for (let i = 0; i < nTrk; i++) {
     const end = destinationPoint(cur.lat, cur.lon, hdg, side);
-    wps.push({ lat: cur.lat, lon: cur.lon,
-      note: `Track ${i+1} — hdg ${hdg.toFixed(0)}°T` });
     total += side;
-
     if (i < nTrk - 1) {
-      // Turn point at end of track, then crossleg S in the creep direction
-      const nxt = destinationPoint(end.lat, end.lon, acrossHdg, S);
-      wps.push({ lat: end.lat, lon: end.lon,
-        note: `Track ${i+1} end — 90° turn onto crossleg` });
+      wps.push({ lat: end.lat, lon: end.lon, note: `Track ${i+1} end — 90° turn onto crossleg` });
+      const nxt     = destinationPoint(end.lat, end.lon, acrossHdg, S);
+      const nextHdg = (hdg + 180) % 360;
       wps.push({ lat: nxt.lat, lon: nxt.lon,
-        note: `Crossleg ${i+1} end — 90° turn onto track ${i+2}` });
+        note: `Crossleg ${i+1} end → Track ${i+2} start — hdg ${nextHdg.toFixed(0)}°T` });
       total += S;
-      hdg = (hdg + 180) % 360;
+      hdg = nextHdg;
       cur = nxt;
     } else {
-      wps.push({ lat: end.lat, lon: end.lon,
-        note: `Track ${i+1} end — search complete` });
+      wps.push({ lat: end.lat, lon: end.lon, note: `Track ${i+1} end — search complete` });
     }
   }
 
@@ -1993,16 +1987,24 @@ function patternCreeping(dLat, dLon, W, S, area, r, driftDir) {
 
   const wps = [];
   let cur = p, hdg = trackHdg, total = 0;
+
+  // Start of the first track — the only track-start that isn't also a crossleg end
+  wps.push({ lat: cur.lat, lon: cur.lon, note: `Track 1 — hdg ${hdg.toFixed(0)}°T` });
+
   for (let i = 0; i < nTrk; i++) {
     const end = destinationPoint(cur.lat, cur.lon, hdg, side);
-    wps.push({ lat: cur.lat, lon: cur.lon, note: `Track ${i+1} — hdg ${hdg.toFixed(0)}°T` });
     total += side;
     if (i < nTrk - 1) {
+      // End of this track — turn onto the crossleg
       wps.push({ lat: end.lat, lon: end.lon, note: `Track ${i+1} end — 90° turn onto crossleg` });
-      const nxt = destinationPoint(end.lat, end.lon, acrossHdg, S);
-      wps.push({ lat: nxt.lat, lon: nxt.lon, note: `Crossleg ${i+1} end — 90° turn onto track ${i+2}` });
+      // Advance one track spacing. This point IS the start of the next track,
+      // so it's emitted once — no zero-length duplicate waypoint.
+      const nxt     = destinationPoint(end.lat, end.lon, acrossHdg, S);
+      const nextHdg = (hdg + 180) % 360;
+      wps.push({ lat: nxt.lat, lon: nxt.lon,
+        note: `Crossleg ${i+1} end → Track ${i+2} start — hdg ${nextHdg.toFixed(0)}°T` });
       total += S;
-      hdg = (hdg + 180) % 360;
+      hdg = nextHdg;
       cur = nxt;
     } else {
       wps.push({ lat: end.lat, lon: end.lon, note: `Track ${i+1} end — search complete` });
