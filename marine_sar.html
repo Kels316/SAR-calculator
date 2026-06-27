@@ -2074,7 +2074,7 @@ function patternCreeping(dLat, dLon, W, S, area, r, driftDir) {
   }
   return { total, startLat: wps[0].lat, startLon: wps[0].lon, waypoints: wps };
 }
-
+  
 function patternTrackLine(dLat, dLon, W, S, area, r, driftDir, trackLen, trackHdg) {
   // Three-pass track line search. Start at LKP (passed as dLat/dLon).
   // Each main leg extends S/2 past the end of the missing vessel track so
