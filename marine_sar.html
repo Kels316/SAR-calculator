@@ -1205,6 +1205,12 @@
           <input type="number" id="asset_speed" value="10" min="1" step="1">
         </div>
         <div class="field">
+          <label>Magnetic variation <span class="unit">° (+ East / − West)</span>
+            <span id="mag_var_status" style="font-size:0.78em;margin-left:6px;color:var(--muted)"></span>
+          </label>
+          <input type="number" id="mag_var" value="0" min="-30" max="30" step="0.5" oninput="onMagVarInput()">
+        </div>
+        <div class="field">
           <label>Transit time to scene <span class="unit">hours</span></label>
           <input type="number" id="transit_h" value="0.5" min="0" step="0.25">
         </div>
@@ -1428,6 +1434,10 @@ const R_NM = 3440.065;
 
 function toRad(d) { return d * Math.PI / 180; }
 function toDeg(r) { return r * 180 / Math.PI; }
+
+function getMagVar() { return getFloat('mag_var', 0); }
+function toMag(t) { return ((t - getMagVar()) % 360 + 360) % 360; }
+function fmtMag(t) { return Math.round(toMag(t)).toString().padStart(3, '0') + '°M'; }
 
 function destinationPoint(lat, lon, bearing, distNm) {
   const d   = distNm / R_NM;
@@ -1885,7 +1895,7 @@ function patternParallel(dLat, dLon, W, S, area, r, driftDir) {
   let cur = p, hdg = trackHdg, total = 0;
 
   // Start of the first track
-  wps.push({ lat: cur.lat, lon: cur.lon, note: `Track 1 — hdg ${hdg.toFixed(0)}°T` });
+  wps.push({ lat: cur.lat, lon: cur.lon, note: `Track 1 — hdg ${fmtMag(hdg)}` });
 
   for (let i = 0; i < nTrk; i++) {
     const end = destinationPoint(cur.lat, cur.lon, hdg, side);
@@ -1895,7 +1905,7 @@ function patternParallel(dLat, dLon, W, S, area, r, driftDir) {
       const nxt     = destinationPoint(end.lat, end.lon, acrossHdg, S);
       const nextHdg = (hdg + 180) % 360;
       wps.push({ lat: nxt.lat, lon: nxt.lon,
-        note: `Crossleg ${i+1} end → Track ${i+2} start — hdg ${nextHdg.toFixed(0)}°T` });
+        note: `Crossleg ${i+1} end → Track ${i+2} start — hdg ${fmtMag(nextHdg)}` });
       total += S;
       hdg = nextHdg;
       cur = nxt;
@@ -2007,10 +2017,10 @@ function patternSector(dLat, dLon, W, S, area, r, driftDir) {
   const sectorLegs = [
     { leg: 1, hdg: hdg1, dist: r, turn: '120° STBD' },
     { leg: 2, hdg: hdg2, dist: r, turn: '120° STBD' },
-    { leg: 3, toDatum: true, dist: r, turn: `At datum: turn onto ${Math.round(hdg3).toString().padStart(3,'0')}°T` },
+    { leg: 3, toDatum: true, dist: r, turn: 'At datum: turn', turnHdg: hdg3 },
     { leg: 4, hdg: hdg3, dist: r, turn: '120° STBD' },
     { leg: 5, hdg: hdg1, dist: r, turn: '120° STBD' },
-    { leg: 6, toDatum: true, dist: r, turn: `At datum: turn onto ${Math.round(hdg2).toString().padStart(3,'0')}°T` },
+    { leg: 6, toDatum: true, dist: r, turn: 'At datum: turn', turnHdg: hdg2 },
     { leg: 7, hdg: hdg2, dist: r, turn: '120° STBD' },
     { leg: 8, hdg: hdg3, dist: r, turn: '120° STBD' },
     { leg: 9, toDatum: true, dist: r, turn: 'Search complete' },
@@ -2051,7 +2061,7 @@ function patternCreeping(dLat, dLon, W, S, area, r, driftDir) {
   let cur = p, hdg = trackHdg, total = 0;
 
   // Start of the first track — the only track-start that isn't also a crossleg end
-  wps.push({ lat: cur.lat, lon: cur.lon, note: `Track 1 — hdg ${hdg.toFixed(0)}°T` });
+  wps.push({ lat: cur.lat, lon: cur.lon, note: `Track 1 — hdg ${fmtMag(hdg)}` });
 
   for (let i = 0; i < nTrk; i++) {
     const end = destinationPoint(cur.lat, cur.lon, hdg, side);
@@ -2064,7 +2074,7 @@ function patternCreeping(dLat, dLon, W, S, area, r, driftDir) {
       const nxt     = destinationPoint(end.lat, end.lon, acrossHdg, S);
       const nextHdg = (hdg + 180) % 360;
       wps.push({ lat: nxt.lat, lon: nxt.lon,
-        note: `Crossleg ${i+1} end → Track ${i+2} start — hdg ${nextHdg.toFixed(0)}°T` });
+        note: `Crossleg ${i+1} end → Track ${i+2} start — hdg ${fmtMag(nextHdg)}` });
       total += S;
       hdg = nextHdg;
       cur = nxt;
@@ -2121,7 +2131,7 @@ function patternTrackLine(dLat, dLon, W, S, area, r, driftDir, trackLen, trackHd
     total,
     startLat: dLat, startLon: dLon,
     waypoints: [{ lat: dLat, lon: dLon,
-      note: `LKP — track ${Math.round(h0).toString().padStart(3,'0')}°T for ${trackLen.toFixed(1)} nm` }],
+      note: `LKP — track ${fmtMag(h0)} for ${trackLen.toFixed(1)} nm` }],
     trackLegs,
     mapCoords,
     S,
@@ -2305,11 +2315,11 @@ function calculate() {
         let delta = ((nextHdg - hdg) + 360) % 360;
         if (delta > 180) delta -= 360;
         const dir = delta > 0 ? 'STBD' : 'PORT';
-        turnStr = `<span class="wp-turn">↱ Turn ${dir} → ${Math.round(nextHdg).toString().padStart(3,'0')}°T</span>`;
+        turnStr = `<span class="wp-turn">↱ Turn ${dir} → ${fmtMag(nextHdg)}</span>`;
       } else {
         turnStr = `<span class="wp-turn-end">✓ Pattern complete</span>`;
       }
-      navHtml = `<div class="wp-nav">Steer <strong>${Math.round(hdg).toString().padStart(3,'0')}°T</strong> &nbsp;·&nbsp; ${dist.toFixed(2)} nm &nbsp;·&nbsp; ${timeStr}</div><div>${turnStr}</div>`;
+      navHtml = `<div class="wp-nav">Steer <strong>${fmtMag(hdg)}</strong> &nbsp;·&nbsp; ${dist.toFixed(2)} nm &nbsp;·&nbsp; ${timeStr}</div><div>${turnStr}</div>`;
     }
     const tr = document.createElement('tr');
     tr.innerHTML = `
@@ -2340,12 +2350,15 @@ function calculate() {
       const turnColor  = isDatum ? 'color:var(--accent)' : '';
       const hdgCell = leg.toDatum
         ? `<em style="color:var(--muted)">Steer towards datum</em>`
-        : `Steer <strong>${Math.round(leg.hdg).toString().padStart(3,'0')}°T</strong>`;
+        : `Steer <strong>${fmtMag(leg.hdg)}</strong>`;
+      const turnDisplay = leg.turnHdg !== undefined
+        ? `${leg.turn} <strong>${fmtMag(leg.turnHdg)}</strong>`
+        : leg.turn;
       html += `<tr>
         <td class="wp-num">L${leg.leg}</td>
         <td class="wp-coord">${hdgCell}</td>
         <td class="wp-note">${legTime}</td>
-        <td class="wp-note ${turnClass}" style="${turnColor}">${isDatum ? '⬤' : '↱'} ${leg.turn}</td>
+        <td class="wp-note ${turnClass}" style="${turnColor}">${isDatum ? '⬤' : '↱'} ${turnDisplay}</td>
       </tr>`;
     }
     sectorTable.innerHTML = html;
@@ -2359,7 +2372,7 @@ function calculate() {
   const expandWrap  = document.getElementById('expandLegWrap');
   if (pat.expandingLegs) {
     let html = `<tr class="sector-sweep-header">
-      <td colspan="4">N=${pat.N} legs &nbsp;·&nbsp; R=${pat.rUsed}nm S=${pat.sUsed}nm &nbsp;·&nbsp; first leg ${Math.round(pat.expandingLegs[0].hdg).toString().padStart(3,'0')}°T into wind @ ${assetSpeed} kn</td>
+      <td colspan="4">N=${pat.N} legs &nbsp;·&nbsp; R=${pat.rUsed}nm S=${pat.sUsed}nm &nbsp;·&nbsp; first leg ${fmtMag(pat.expandingLegs[0].hdg)} into wind @ ${assetSpeed} kn</td>
     </tr>`;
     for (const leg of pat.expandingLegs) {
       const legMins = (leg.dist / assetSpeed) * 60;
@@ -2368,7 +2381,7 @@ function calculate() {
       const turnClass  = isComplete ? 'sector-complete' : 'sector-turn';
       html += `<tr>
         <td class="wp-num">L${leg.leg}</td>
-        <td class="wp-coord">Steer <strong>${Math.round(leg.hdg).toString().padStart(3,'0')}°T</strong></td>
+        <td class="wp-coord">Steer <strong>${fmtMag(leg.hdg)}</strong></td>
         <td class="wp-note">${legTime}</td>
         <td class="wp-note ${turnClass}">↱ ${leg.turn}</td>
       </tr>`;
@@ -2383,9 +2396,8 @@ function calculate() {
   const trackTable = document.getElementById('trackLegTable');
   const trackWrap  = document.getElementById('trackLegWrap');
   if (pat.trackLegs) {
-    const hdgStr = Math.round(pat.trackHdg).toString().padStart(3, '0');
     let html = `<tr class="sector-sweep-header">
-      <td colspan="4">Track ${hdgStr}°T · ${pat.trackLen.toFixed(1)} nm · S = ${pat.S.toFixed(2)} nm @ ${assetSpeed} kn</td>
+      <td colspan="4">Track ${fmtMag(pat.trackHdg)} · ${pat.trackLen.toFixed(1)} nm · S = ${pat.S.toFixed(2)} nm @ ${assetSpeed} kn</td>
     </tr>`;
     for (const leg of pat.trackLegs) {
       const legMins = (leg.dist / assetSpeed) * 60;
@@ -2396,7 +2408,7 @@ function calculate() {
       const rowStyle   = isCross ? 'color:var(--muted)' : '';
       html += `<tr style="${rowStyle}">
         <td class="wp-num">L${leg.leg}</td>
-        <td class="wp-coord">Steer <strong>${Math.round(leg.hdg).toString().padStart(3,'0')}°T</strong></td>
+        <td class="wp-coord">Steer <strong>${fmtMag(leg.hdg)}</strong></td>
         <td class="wp-note">${legTime}</td>
         <td class="wp-note ${turnClass}">↱ ${leg.turn}</td>
       </tr>`;
@@ -2537,11 +2549,11 @@ function buildSummary(d) {
         let delta = ((nextHdg - hdg) + 360) % 360;
         if (delta > 180) delta -= 360;
         const dir = delta > 0 ? 'STBD' : 'PORT';
-        turnStr = `Turn ${dir} → ${Math.round(nextHdg).toString().padStart(3,'0')}°T`;
+        turnStr = `Turn ${dir} → ${fmtMag(nextHdg)}`;
       } else {
         turnStr = 'Pattern complete';
       }
-      lines.push(`        Steer ${Math.round(hdg).toString().padStart(3,'0')}°T  ·  ${dist.toFixed(2)} nm  ·  ${timeStr}  ·  ${turnStr}`);
+      lines.push(`        Steer ${fmtMag(hdg)}  ·  ${dist.toFixed(2)} nm  ·  ${timeStr}  ·  ${turnStr}`);
     }
   });
 
@@ -2551,8 +2563,9 @@ function buildSummary(d) {
     lines.push('');
     lines.push(`── Sector Search — R = ${d.pat.r.toFixed(2)} nm · ${legTime} per leg @ ${d.assetSpeed} kn ──`);
     for (const leg of d.pat.sectorLegs) {
-      const hdgStr = leg.toDatum ? 'Steer towards datum' : `Steer ${Math.round(leg.hdg).toString().padStart(3,'0')}°T`;
-      lines.push(`  L${leg.leg}  ${hdgStr}  ·  ${legTime}  →  ${leg.turn}`);
+      const hdgStr = leg.toDatum ? 'Steer towards datum' : `Steer ${fmtMag(leg.hdg)}`;
+      const turnStr = leg.turnHdg !== undefined ? `${leg.turn} ${fmtMag(leg.turnHdg)}` : leg.turn;
+      lines.push(`  L${leg.leg}  ${hdgStr}  ·  ${legTime}  →  ${turnStr}`);
     }
   }
   if (d.pat.expandingLegs) {
@@ -2561,17 +2574,16 @@ function buildSummary(d) {
     for (const leg of d.pat.expandingLegs) {
       const legMins = (leg.dist / d.assetSpeed) * 60;
       const legTime = legMins < 60 ? `${Math.round(legMins)} min` : `${Math.floor(legMins/60)}h ${Math.round(legMins%60)}min`;
-      lines.push(`  L${leg.leg}  Steer ${Math.round(leg.hdg).toString().padStart(3,'0')}°T  ·  ${legTime}  →  ${leg.turn}`);
+      lines.push(`  L${leg.leg}  Steer ${fmtMag(leg.hdg)}  ·  ${legTime}  →  ${leg.turn}`);
     }
   }
   if (d.pat.trackLegs) {
-    const hdgStr = Math.round(d.pat.trackHdg).toString().padStart(3, '0');
     lines.push('');
-    lines.push(`── Track Line Search — ${hdgStr}°T · ${d.pat.trackLen.toFixed(1)} nm · S=${d.pat.S.toFixed(2)} nm @ ${d.assetSpeed} kn ──`);
+    lines.push(`── Track Line Search — ${fmtMag(d.pat.trackHdg)} · ${d.pat.trackLen.toFixed(1)} nm · S=${d.pat.S.toFixed(2)} nm @ ${d.assetSpeed} kn ──`);
     for (const leg of d.pat.trackLegs) {
       const legMins = (leg.dist / d.assetSpeed) * 60;
       const legTime = legMins < 60 ? `${Math.round(legMins)} min` : `${Math.floor(legMins/60)}h ${Math.round(legMins%60)}min`;
-      lines.push(`  L${leg.leg}  Steer ${Math.round(leg.hdg).toString().padStart(3,'0')}°T  ·  ${legTime}  →  ${leg.turn}`);
+      lines.push(`  L${leg.leg}  Steer ${fmtMag(leg.hdg)}  ·  ${legTime}  →  ${leg.turn}`);
     }
   }
   lines.push('════════════════════════════════════════');
@@ -3299,7 +3311,49 @@ function initMap() {
 
 function onLKPInput() {
   clearTimeout(_lkpDebounce);
-  _lkpDebounce = setTimeout(updateMapLKP, 450);
+  _lkpDebounce = setTimeout(() => { updateMapLKP(); fetchWMMDeclination(); }, 450);
+}
+
+let _magVarManual = false;
+
+function onMagVarInput() {
+  _magVarManual = true;
+  setEl('mag_var_status', '<a href="#" onclick="resetMagVar();return false" style="color:var(--muted);font-size:0.9em">✎ manual — reset to WMM</a>');
+}
+
+function resetMagVar() {
+  _magVarManual = false;
+  fetchWMMDeclination();
+}
+
+async function fetchWMMDeclination() {
+  if (_magVarManual) return;
+  let lat, lon;
+  try {
+    lat = parseLatLon(document.getElementById('lkp_lat').value);
+    lon = parseLatLon(document.getElementById('lkp_lon').value);
+  } catch(e) { return; }
+  if (isNaN(lat) || isNaN(lon) || !isFinite(lat) || !isFinite(lon)) return;
+
+  setEl('mag_var_status', '<span style="color:var(--muted)">⟳ fetching WMM…</span>');
+
+  const now = new Date();
+  const url = `https://www.ngdc.noaa.gov/geomag-web/calculators/calculateDeclination?lat1=${lat.toFixed(4)}&lon1=${lon.toFixed(4)}&key=zNEw7&startYear=${now.getFullYear()}&startMonth=${now.getMonth()+1}&startDay=${now.getDate()}&resultFormat=json`;
+
+  try {
+    const resp = await fetch(url);
+    if (!resp.ok) throw new Error('HTTP ' + resp.status);
+    const data = await resp.json();
+    const decl = data?.result?.[0]?.declination;
+    if (decl === undefined || decl === null) throw new Error('no declination in response');
+    if (_magVarManual) return; // user may have typed while we were fetching
+    const rounded = Math.round(decl * 10) / 10;
+    document.getElementById('mag_var').value = rounded;
+    const dir = rounded >= 0 ? `${rounded}°E` : `${Math.abs(rounded)}°W`;
+    setEl('mag_var_status', `<span style="color:var(--ok)">✓ WMM (${dir})</span>`);
+  } catch(e) {
+    setEl('mag_var_status', '<span style="color:var(--warn,#e6a817)">WMM unavailable — enter manually</span>');
+  }
 }
 
 let _lkpIcon = null;
@@ -3315,9 +3369,9 @@ function _attachLKPDrag() {
     document.getElementById('lkp_lat').value = pos.lat.toFixed(5);
     document.getElementById('lkp_lon').value = pos.lng.toFixed(5);
     ['lkp_lat','lkp_lon'].forEach(id => document.getElementById(id).classList.remove('live-populated'));
-    // Trigger live data debounce without re-running updateMapLKP (marker is already in place)
     clearTimeout(_lkpDebounce);
-    _lkpDebounce = setTimeout(() => {}, 0); // clear only; user can click Fetch manually
+    _lkpDebounce = setTimeout(() => {}, 0);
+    fetchWMMDeclination();
   });
 }
 

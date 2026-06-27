@@ -24,6 +24,7 @@ A browser-based Search and Rescue planning tool based on the Australian National
 - **Interactive map** — tap to place a draggable LKP pin, or type coordinates; map shows LKP, search area circle, dotted bounding square (oriented to pattern direction), and calculated search pattern
 - **Responsive layout** — works on desktop and tablet; portrait tablet (≤768px) stacks panels into a single scrollable column so the tide chart is always reachable
 - **AIS overlay** — toggle live nearby vessel positions onto the map via an aisstream.io Cloudflare Worker proxy; vessels colour-coded by nav status with popup showing name, MMSI, SOG, COG, and destination
+- **Magnetic bearings** — all search pattern steering headings output in °M; magnetic variation auto-populated from the NOAA World Magnetic Model (WMM) based on the LKP position, with manual override
 - **Waypoint export** — GPX and KML export for upload to Google Earth or GPS devices
 - **BOM marine warnings** — fetches active marine weather warnings for the LKP from the Bureau of Meteorology, displayed in the live conditions panel with GMDSS severity colour-coding (strong wind / gale / storm force / hurricane force)
 - **Print / Save PDF** — generates a clean monospace SAR plan summary (incident, drift, datum, search parameters, live conditions, tide HW/LW, active warnings with full text, waypoints) and opens the browser print dialog
@@ -46,6 +47,7 @@ Enter LKP coordinates and click **Fetch Live Marine Data** to pull current condi
 | Weather factor (Wf) | Derived from significant wave height |
 | Tide predictions | ANTT 2026 — Australian Hydrographic Office (local DB) |
 | Marine warnings | Bureau of Meteorology (BOM) Weather API — location-specific active warnings |
+| Magnetic variation | NOAA World Magnetic Model (WMM) via NCEI geomag API — auto-fetched from LKP position |
 
 Fields auto-populated from live data are highlighted in green. Editing any field manually removes the green highlight.
 
@@ -129,3 +131,4 @@ Open `marine_sar.html` in any modern browser — no server or installation requi
   - AHP11 — Secondary port calculation method
 - Open-Meteo Marine & Forecast APIs — [docs](https://open-meteo.com/en/docs/marine-weather-api)
 - aisstream.io — WebSocket AIS data stream (requires free API key; accessed via Cloudflare Worker proxy)
+- NOAA NCEI Geomagnetic Calculator API — [ngdc.noaa.gov/geomag-web](https://www.ngdc.noaa.gov/geomag-web/)
